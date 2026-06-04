@@ -21,37 +21,47 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
-    match /courses/{courseId} {
+    match /slots/{slotId} {
       allow read: if true;
-      allow write: if isAdmin() || isTrainer();
-    }
-
-    match /courseSchedules/{scheduleId} {
-      allow read: if true;
-      allow write: if isAdmin() || isTrainer();
+      allow create, delete: if isAdmin() || isTrainer();
+      allow update: if request.auth != null; // currentBookings viene aggiornato dai soci
     }
 
     match /bookings/{bookingId} {
       allow read: if request.auth != null &&
         (resource.data.userId == request.auth.uid || isAdmin());
-      allow create: if request.auth != null &&
-        request.resource.data.userId == request.auth.uid;
+      allow create: if request.auth != null;
       allow update, delete: if request.auth != null &&
         (resource.data.userId == request.auth.uid || isAdmin());
     }
 
-    match /trainers/{trainerId} {
+    match /waitlist/{waitlistId} {
+      allow read: if request.auth != null &&
+        (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if request.auth != null;
+      allow delete: if request.auth != null &&
+        (resource.data.userId == request.auth.uid || isAdmin());
+    }
+
+    match /notifications/{notifId} {
+      allow read: if request.auth != null &&
+        resource.data.userId == request.auth.uid;
+      allow create: if request.auth != null;
+      allow update, delete: if request.auth != null &&
+        resource.data.userId == request.auth.uid;
+    }
+
+    match /avvisi/{avvisoId} {
+      allow read: if request.auth != null;
+      allow write: if isAdmin();
+    }
+
+    match /gymConfig/{doc} {
       allow read: if true;
       allow write: if isAdmin();
     }
 
-    match /notifications/{notifId} {
-      allow read, write: if request.auth != null &&
-        resource.data.userId == request.auth.uid;
-      allow create: if isAdmin();
-    }
-
-    match /gymConfig/{doc} {
+    match /trainers/{trainerId} {
       allow read: if true;
       allow write: if isAdmin();
     }
