@@ -30,6 +30,7 @@ export type PageType =
   | 'ADMIN_MEMBERS'
   | 'ADMIN_COURSES'
   | 'ADMIN_AVVISI'
+  | 'ADMIN_IMPOSTAZIONI'
   | 'ADMIN_PRESENZE';
 
 export interface RouteState {

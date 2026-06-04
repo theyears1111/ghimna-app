@@ -1,6 +1,6 @@
 // ============================================================
 // GHIMNA TROTTA 2.0 — pages/CoursesPage.tsx
-// Con supporto lista d'attesa
+// Con supporto lista d'attesa + limite cancellazione
 // ============================================================
 
 import React, { useEffect, useState } from 'react';
@@ -30,6 +30,11 @@ interface Slot {
   currentBookings: number;
 }
 
+interface GymSettings {
+  cancellationEnabled: boolean;
+  cancellationHoursLimit: number;
+}
+
 function getWeekDays() {
   const today = new Date();
   const day = today.getDay();
@@ -48,6 +53,15 @@ function isSameDay(d1: Date, d2: Date) {
     d1.getFullYear() === d2.getFullYear();
 }
 
+function canCancel(slot: Slot, selectedDate: Date, settings: GymSettings): boolean {
+  if (!settings.cancellationEnabled) return true;
+  const [h, m] = slot.startTime.split(':').map(Number);
+  const courseDateTime = new Date(selectedDate);
+  courseDateTime.setHours(h, m, 0, 0);
+  const limitMs = settings.cancellationHoursLimit * 60 * 60 * 1000;
+  return new Date().getTime() < courseDateTime.getTime() - limitMs;
+}
+
 export default function CoursesPage({ navigate }: Props) {
   const { user } = useAuth();
   const weekDays = getWeekDays();
@@ -55,14 +69,31 @@ export default function CoursesPage({ navigate }: Props) {
 
   const [selectedDate, setSelectedDate] = useState<Date>(today);
   const [slots, setSlots] = useState<Slot[]>([]);
-  const [myBookings, setMyBookings] = useState<Record<string, string>>({}); // slotId -> bookingId
-  const [myWaitlist, setMyWaitlist] = useState<Record<string, string>>({}); // slotId -> waitlistId
+  const [myBookings, setMyBookings] = useState<Record<string, string>>({});
+  const [myWaitlist, setMyWaitlist] = useState<Record<string, string>>({});
+  const [settings, setSettings] = useState<GymSettings>({ cancellationEnabled: true, cancellationHoursLimit: 2 });
   const [loading, setLoading] = useState(true);
   const [actionInProgress, setActionInProgress] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState('');
+  const [errorMsg, setErrorMsg] = useState('');
 
   useEffect(() => { loadSlots(); }, [selectedDate]);
   useEffect(() => { if (user) loadMyStatus(); }, [user, selectedDate]);
+  useEffect(() => {
+    async function loadSettings() {
+      try {
+        const snap = await getDoc(doc(db, 'gymConfig', 'main'));
+        if (snap.exists()) {
+          const data = snap.data();
+          setSettings({
+            cancellationEnabled: data.cancellationEnabled ?? true,
+            cancellationHoursLimit: data.cancellationHoursLimit ?? 2,
+          });
+        }
+      } catch (e) { console.error(e); }
+    }
+    loadSettings();
+  }, []);
 
   async function loadSlots() {
     setLoading(true);
@@ -85,7 +116,6 @@ export default function CoursesPage({ navigate }: Props) {
     if (!user) return;
     const dateStr = selectedDate.toISOString().split('T')[0];
 
-    // Prenotazioni confermate
     const bSnap = await getDocs(query(
       collection(db, 'bookings'),
       where('userId', '==', user.uid),
@@ -96,7 +126,6 @@ export default function CoursesPage({ navigate }: Props) {
     bSnap.docs.forEach(d => { bMap[d.data().slotId] = d.id; });
     setMyBookings(bMap);
 
-    // Lista d'attesa
     const wSnap = await getDocs(query(
       collection(db, 'waitlist'),
       where('userId', '==', user.uid),
@@ -110,6 +139,7 @@ export default function CoursesPage({ navigate }: Props) {
   async function handleBook(slot: Slot) {
     if (!user || actionInProgress) return;
     setActionInProgress(slot.id);
+    setErrorMsg('');
     const dateStr = selectedDate.toISOString().split('T')[0];
 
     try {
@@ -117,32 +147,32 @@ export default function CoursesPage({ navigate }: Props) {
       const alreadyWaiting = myWaitlist[slot.id];
 
       if (alreadyBooked) {
-        // Cancella prenotazione
+        // Controlla limite cancellazione
+        if (!canCancel(slot, selectedDate, settings)) {
+          setErrorMsg(`Non puoi cancellare meno di ${settings.cancellationHoursLimit} ore prima del corso.`);
+          setTimeout(() => setErrorMsg(''), 4000);
+          setActionInProgress(null);
+          return;
+        }
         await deleteDoc(doc(db, 'bookings', alreadyBooked));
         await updateDoc(doc(db, 'slots', slot.id), { currentBookings: increment(-1) });
-
-        // Avvisa il primo in lista d'attesa
         await notifyFirstInWaitlist(slot, dateStr);
-
         setMyBookings(prev => { const n = { ...prev }; delete n[slot.id]; return n; });
         setSlots(prev => prev.map(s => s.id === slot.id ? { ...s, currentBookings: s.currentBookings - 1 } : s));
         showSuccess('Prenotazione cancellata');
 
       } else if (alreadyWaiting) {
-        // Esci dalla lista d'attesa
         await deleteDoc(doc(db, 'waitlist', alreadyWaiting));
         setMyWaitlist(prev => { const n = { ...prev }; delete n[slot.id]; return n; });
         showSuccess('Rimosso dalla lista d\'attesa');
 
       } else if (slot.currentBookings >= slot.maxCapacity) {
-        // Entra in lista d'attesa
         const wSnap = await getDocs(query(
           collection(db, 'waitlist'),
           where('slotId', '==', slot.id),
           where('date', '==', dateStr)
         ));
         const position = wSnap.size + 1;
-
         const wRef = await addDoc(collection(db, 'waitlist'), {
           userId: user.uid,
           userName: user.displayName,
@@ -158,7 +188,6 @@ export default function CoursesPage({ navigate }: Props) {
         showSuccess(`Sei in lista d'attesa (posizione ${position})`);
 
       } else {
-        // Prenota
         const bRef = await addDoc(collection(db, 'bookings'), {
           userId: user.uid,
           userName: user.displayName,
@@ -180,21 +209,16 @@ export default function CoursesPage({ navigate }: Props) {
   }
 
   async function notifyFirstInWaitlist(slot: Slot, dateStr: string) {
-    // Trova il primo in lista d'attesa
     const wSnap = await getDocs(query(
       collection(db, 'waitlist'),
       where('slotId', '==', slot.id),
       where('date', '==', dateStr)
     ));
     if (wSnap.empty) return;
-
-    // Ordina per posizione e prendi il primo
     const sorted = wSnap.docs
       .map(d => ({ id: d.id, ...d.data() } as any))
       .sort((a, b) => a.position - b.position);
     const first = sorted[0];
-
-    // Crea notifica in-app per il primo in lista
     await addDoc(collection(db, 'notifications'), {
       userId: first.userId,
       type: 'waitlist_available',
@@ -251,10 +275,15 @@ export default function CoursesPage({ navigate }: Props) {
         })}
       </div>
 
-      {/* Success message */}
       {successMsg && (
         <div className="mx-4 mt-3 bg-green-500/20 border border-green-500/40 text-green-300 text-sm px-4 py-2 rounded-xl text-center">
           {successMsg}
+        </div>
+      )}
+      {errorMsg && (
+        <div className="mx-4 mt-3 bg-red-500/20 border border-red-500/40 text-red-300 text-sm px-4 py-2 rounded-xl flex items-center gap-2">
+          <AlertCircle className="w-4 h-4 flex-shrink-0" />
+          {errorMsg}
         </div>
       )}
 
@@ -278,6 +307,7 @@ export default function CoursesPage({ navigate }: Props) {
             const full = slot.currentBookings >= slot.maxCapacity;
             const past = isPast(slot);
             const spots = slot.maxCapacity - slot.currentBookings;
+            const cancellable = canCancel(slot, selectedDate, settings);
 
             return (
               <div key={slot.id}
@@ -306,18 +336,16 @@ export default function CoursesPage({ navigate }: Props) {
                             </span>
                           )}
                         </span>
-                        {slot.room && (
-                          <span className="text-white/30 text-xs">{slot.room}</span>
-                        )}
+                        {slot.room && <span className="text-white/30 text-xs">{slot.room}</span>}
                       </div>
-                      {slot.trainerName && (
-                        <p className="text-white/30 text-xs mt-1">👤 {slot.trainerName}</p>
-                      )}
+                      {slot.trainerName && <p className="text-white/30 text-xs mt-1">👤 {slot.trainerName}</p>}
                       {waiting && (
                         <p className="text-yellow-400 text-xs mt-1 flex items-center gap-1">
-                          <AlertCircle className="w-3 h-3" />
-                          Sei in lista d'attesa
+                          <AlertCircle className="w-3 h-3" /> Sei in lista d'attesa
                         </p>
+                      )}
+                      {booked && !cancellable && (
+                        <p className="text-white/30 text-xs mt-1">🔒 Cancellazione non più disponibile</p>
                       )}
                     </div>
                   </div>
@@ -326,19 +354,18 @@ export default function CoursesPage({ navigate }: Props) {
                   {!past ? (
                     <button
                       onClick={() => handleBook(slot)}
-                      disabled={actionInProgress === slot.id}
+                      disabled={actionInProgress === slot.id || (booked && !cancellable)}
                       className={`flex-shrink-0 px-3 py-2 rounded-xl text-xs font-bold transition-all ${
-                        booked
-                          ? 'bg-[#C0392B]/20 text-[#C0392B] border border-[#C0392B]/40'
-                          : waiting
-                          ? 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30'
-                          : full
-                          ? 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30'
-                          : 'bg-[#C0392B] text-white hover:bg-[#96281B]'
+                        booked && !cancellable ? 'bg-white/5 border border-white/10 text-white/20 cursor-not-allowed' :
+                        booked ? 'bg-[#C0392B]/20 text-[#C0392B] border border-[#C0392B]/40' :
+                        waiting ? 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30' :
+                        full ? 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30' :
+                        'bg-[#C0392B] text-white hover:bg-[#96281B]'
                       }`}>
-                      {actionInProgress === slot.id ? (
-                        <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                      ) : booked ? 'Annulla'
+                      {actionInProgress === slot.id
+                        ? <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                        : booked && !cancellable ? '🔒'
+                        : booked ? 'Annulla'
                         : waiting ? 'Esci lista'
                         : full ? '⏳ Attesa'
                         : 'Prenota'}

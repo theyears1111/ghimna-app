@@ -3,7 +3,7 @@
 // ============================================================
 import React from 'react';
 import { RouteState } from '../types';
-import { ArrowLeft, Users, BookOpen, CalendarDays, Megaphone } from 'lucide-react';
+import { ArrowLeft, Users, BookOpen, CalendarDays, Megaphone, Settings } from 'lucide-react';
 
 interface Props { navigate: (r: RouteState) => void; }
 
@@ -26,14 +26,15 @@ export default function AdminPage({ navigate }: Props) {
             <p className="text-white/40 text-xs">Chi è iscritto a ogni corso</p>
           </div>
         </button>
+
         <button onClick={() => navigate({ page: 'ADMIN_AVVISI' })}
-  className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 flex items-center gap-4 hover:bg-white/10 transition-colors text-left">
-  <Megaphone className="w-6 h-6 text-[#C0392B]" />
-  <div>
-    <p className="text-white font-bold">Bacheca Avvisi</p>
-    <p className="text-white/40 text-xs">Comunica con i soci</p>
-  </div>
-</button>
+          className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 flex items-center gap-4 hover:bg-white/10 transition-colors text-left">
+          <Megaphone className="w-6 h-6 text-[#C0392B]" />
+          <div>
+            <p className="text-white font-bold">Bacheca Avvisi</p>
+            <p className="text-white/40 text-xs">Comunica con i soci</p>
+          </div>
+        </button>
 
         <button onClick={() => navigate({ page: 'ADMIN_MEMBERS' })}
           className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 flex items-center gap-4 hover:bg-white/10 transition-colors text-left">
@@ -50,6 +51,15 @@ export default function AdminPage({ navigate }: Props) {
           <div>
             <p className="text-white font-bold">Gestione Corsi</p>
             <p className="text-white/40 text-xs">Crea e modifica i corsi</p>
+          </div>
+        </button>
+
+        <button onClick={() => navigate({ page: 'ADMIN_IMPOSTAZIONI' })}
+          className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 flex items-center gap-4 hover:bg-white/10 transition-colors text-left">
+          <Settings className="w-6 h-6 text-[#C0392B]" />
+          <div>
+            <p className="text-white font-bold">Impostazioni</p>
+            <p className="text-white/40 text-xs">Limite cancellazione e altre opzioni</p>
           </div>
         </button>
 

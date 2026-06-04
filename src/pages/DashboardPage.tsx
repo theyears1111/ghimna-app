@@ -5,7 +5,7 @@
 import React, { useEffect, useState } from 'react';
 import {
   collection, query, where, getDocs, deleteDoc,
-  doc, updateDoc, increment, orderBy
+  doc, updateDoc, increment, orderBy, getDoc
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../AuthContext';
@@ -34,6 +34,20 @@ interface Avviso {
   createdAt: Date;
 }
 
+interface GymSettings {
+  cancellationEnabled: boolean;
+  cancellationHoursLimit: number;
+}
+
+function canCancel(booking: Booking, settings: GymSettings): boolean {
+  if (!settings.cancellationEnabled) return true;
+  const [h, m] = booking.startTime.split(':').map(Number);
+  const courseDateTime = new Date(booking.date + 'T00:00:00');
+  courseDateTime.setHours(h, m, 0, 0);
+  const limitMs = settings.cancellationHoursLimit * 60 * 60 * 1000;
+  return new Date().getTime() < courseDateTime.getTime() - limitMs;
+}
+
 const DAY_FULL = ['Domenica','Lunedì','Martedì','Mercoledì','Giovedì','Venerdì','Sabato'];
 const MONTHS = ['gen','feb','mar','apr','mag','giu','lug','ago','set','ott','nov','dic'];
 
@@ -59,6 +73,7 @@ export default function DashboardPage({ navigate }: Props) {
   const [loadingBookings, setLoadingBookings] = useState(true);
   const [cancelling, setCancelling] = useState<string | null>(null);
   const [avvisi, setAvvisi] = useState<Avviso[]>([]);
+  const [settings, setSettings] = useState<GymSettings>({ cancellationEnabled: true, cancellationHoursLimit: 2 });
 
   useEffect(() => { if (user) loadUpcomingBookings(); }, [user]);
 
@@ -73,6 +88,22 @@ export default function DashboardPage({ navigate }: Props) {
       } catch (e) { console.error(e); }
     }
     loadAvvisi();
+  }, []);
+
+  useEffect(() => {
+    async function loadSettings() {
+      try {
+        const snap = await getDoc(doc(db, 'gymConfig', 'main'));
+        if (snap.exists()) {
+          const data = snap.data();
+          setSettings({
+            cancellationEnabled: data.cancellationEnabled ?? true,
+            cancellationHoursLimit: data.cancellationHoursLimit ?? 2,
+          });
+        }
+      } catch (e) { console.error(e); }
+    }
+    loadSettings();
   }, []);
 
   async function loadUpcomingBookings() {
@@ -97,6 +128,10 @@ export default function DashboardPage({ navigate }: Props) {
 
   async function handleCancel(booking: Booking) {
     if (cancelling) return;
+    if (!canCancel(booking, settings)) {
+      alert(`Non puoi cancellare meno di ${settings.cancellationHoursLimit} ore prima del corso.`);
+      return;
+    }
     if (!confirm(`Cancellare la prenotazione per ${booking.courseName}?`)) return;
     setCancelling(booking.id);
     try {
@@ -113,8 +148,6 @@ export default function DashboardPage({ navigate }: Props) {
   const now = new Date().toTimeString().slice(0, 5);
   const nextBooking = bookings.find(b => b.date > today || (b.date === today && b.startTime > now));
   const isActive = user.membershipStatus === 'active' || user.membershipStatus === 'trial';
-
-  // Avvisi: prima i pinned, poi gli altri
   const avvisiSorted = [...avvisi].sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0));
 
   return (
@@ -145,8 +178,6 @@ export default function DashboardPage({ navigate }: Props) {
         {/* Welcome */}
         <div>
           <h1 className="text-white text-2xl font-bold">Ciao, {user.displayName.split(' ')[0]}! 👋</h1>
-
-          {/* Prossimo corso in evidenza */}
           {nextBooking && (
             <div className="mt-3 bg-[#C0392B] rounded-2xl p-4">
               <p className="text-white/70 text-xs uppercase tracking-widest mb-1">Prossimo corso</p>
@@ -161,14 +192,12 @@ export default function DashboardPage({ navigate }: Props) {
           )}
         </div>
 
-        {/* Avvisi bacheca */}
+        {/* Avvisi */}
         {avvisiSorted.length > 0 && (
           <div className="space-y-2">
             {avvisiSorted.slice(0, 3).map(avviso => (
               <div key={avviso.id} className={`border rounded-2xl p-3 ${AVVISO_COLORS[avviso.type]}`}>
-                <p className="font-bold text-sm">
-                  {avviso.pinned && '📌 '}{AVVISO_EMOJI[avviso.type]} {avviso.title}
-                </p>
+                <p className="font-bold text-sm">{avviso.pinned && '📌 '}{AVVISO_EMOJI[avviso.type]} {avviso.title}</p>
                 <p className="text-xs opacity-70 mt-0.5">{avviso.message}</p>
               </div>
             ))}
@@ -216,6 +245,7 @@ export default function DashboardPage({ navigate }: Props) {
               {bookings.map(booking => {
                 const info = COURSES_INFO[booking.courseKey] ?? { emoji: '🏋️' };
                 const isToday = booking.date === today;
+                const cancellable = canCancel(booking, settings);
                 return (
                   <div key={booking.id} className="bg-white/5 border border-white/10 rounded-xl p-3 flex items-center gap-3">
                     <span className="text-2xl">{info.emoji}</span>
@@ -224,9 +254,17 @@ export default function DashboardPage({ navigate }: Props) {
                       <p className={`text-xs mt-0.5 ${isToday ? 'text-[#C0392B] font-semibold' : 'text-white/40'}`}>
                         {formatDate(booking.date)} · {booking.startTime}
                       </p>
+                      {!cancellable && (
+                        <p className="text-white/20 text-xs">🔒 Cancellazione non disponibile</p>
+                      )}
                     </div>
-                    <button onClick={() => handleCancel(booking)} disabled={cancelling === booking.id}
-                      className="w-7 h-7 bg-white/10 hover:bg-red-500/20 rounded-lg flex items-center justify-center text-white/30 hover:text-red-400 transition-colors flex-shrink-0">
+                    <button
+                      onClick={() => handleCancel(booking)}
+                      disabled={cancelling === booking.id || !cancellable}
+                      className={`w-7 h-7 rounded-lg flex items-center justify-center transition-colors flex-shrink-0 ${
+                        !cancellable ? 'bg-white/5 text-white/20 cursor-not-allowed' :
+                        'bg-white/10 hover:bg-red-500/20 text-white/30 hover:text-red-400'
+                      }`}>
                       {cancelling === booking.id
                         ? <div className="w-3 h-3 border border-current border-t-transparent rounded-full animate-spin" />
                         : <X className="w-3 h-3" />}

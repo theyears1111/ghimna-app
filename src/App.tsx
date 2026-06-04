@@ -21,6 +21,7 @@ import AdminMembersPage    from './pages/AdminMembersPage';
 import AdminCoursesPage    from './pages/AdminCoursesPage';
 import AdminPresenzePage   from './pages/AdminPresenzePage';
 import AdminAvvisiPage     from './pages/AdminAvvisiPage';
+import AdminImpostazioniPage from './pages/AdminImpostazioniPage';
 
 // ---- Router interno ----------------------------------------
 function AppRouter() {
@@ -74,6 +75,9 @@ function AppRouter() {
     case 'ADMIN_AVVISI':
       if (user.role !== 'admin') return <DashboardPage navigate={navigate} />;
       return <AdminAvvisiPage navigate={navigate} />;
+    case 'ADMIN_IMPOSTAZIONI':
+      if (user.role !== 'admin') return <DashboardPage navigate={navigate} />;
+      return <AdminImpostazioniPage navigate={navigate} />;
     default:
       return <DashboardPage navigate={navigate} />;
   }
