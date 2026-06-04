@@ -1,0 +1,235 @@
+// ============================================================
+// GHIMNA TROTTA 2.0 — pages/AdminMembersPage.tsx
+// ============================================================
+import React, { useEffect, useState } from 'react';
+import { collection, getDocs, updateDoc, doc, query, orderBy } from 'firebase/firestore';
+import { db } from '../firebase';
+import { RouteState, GhimnaUser, MembershipStatus, UserRole } from '../types';
+import { ArrowLeft, Search, ChevronDown, Phone, Mail, Calendar } from 'lucide-react';
+import { MEMBERSHIP_LABELS } from '../constants';
+
+interface Props { navigate: (r: RouteState) => void; }
+
+const STATUS_COLORS: Record<string, string> = {
+  active:    'bg-green-500/20 text-green-400 border-green-500/30',
+  trial:     'bg-blue-500/20 text-blue-400 border-blue-500/30',
+  expired:   'bg-red-500/20 text-red-400 border-red-500/30',
+  suspended: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30',
+};
+
+export default function AdminMembersPage({ navigate }: Props) {
+  const [members, setMembers] = useState<GhimnaUser[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [saving, setSaving] = useState<string | null>(null);
+
+  useEffect(() => { loadMembers(); }, []);
+
+  async function loadMembers() {
+    setLoading(true);
+    const snap = await getDocs(collection(db, 'users'));
+    const data = snap.docs.map(d => {
+      const raw = d.data();
+      return {
+        ...raw,
+        uid: d.id,
+        membershipExpiry: raw.membershipExpiry?.toDate?.() ?? null,
+        createdAt: raw.createdAt?.toDate?.() ?? new Date(),
+      } as GhimnaUser;
+    });
+    data.sort((a, b) => a.displayName.localeCompare(b.displayName));
+    setMembers(data);
+    setLoading(false);
+  }
+
+  async function updateMember(uid: string, field: string, value: any) {
+    setSaving(uid);
+    await updateDoc(doc(db, 'users', uid), { [field]: value });
+    setMembers(prev => prev.map(m => m.uid === uid ? { ...m, [field]: value } : m));
+    setSaving(null);
+  }
+
+  async function updateExpiry(uid: string, dateStr: string) {
+    const date = dateStr ? new Date(dateStr) : null;
+    setSaving(uid);
+    await updateDoc(doc(db, 'users', uid), { membershipExpiry: date });
+    setMembers(prev => prev.map(m => m.uid === uid ? { ...m, membershipExpiry: date } : m));
+    setSaving(null);
+  }
+
+  const filtered = members.filter(m =>
+    m.displayName.toLowerCase().includes(search.toLowerCase()) ||
+    m.email.toLowerCase().includes(search.toLowerCase()) ||
+    (m.phone ?? '').includes(search)
+  );
+
+  return (
+    <div className="min-h-screen bg-[#2C2C2C]">
+      {/* Header */}
+      <div className="bg-[#1a1a1a] px-4 py-4 flex items-center gap-3">
+        <button onClick={() => navigate({ page: 'ADMIN' })} className="text-white/60 hover:text-white">
+          <ArrowLeft className="w-5 h-5" />
+        </button>
+        <h1 className="text-white font-bold text-lg">Gestione Soci</h1>
+        <span className="ml-auto bg-white/10 text-white/50 text-xs px-2 py-1 rounded-lg">
+          {members.length} soci
+        </span>
+      </div>
+
+      {/* Ricerca */}
+      <div className="px-4 py-3">
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30" />
+          <input
+            type="text"
+            placeholder="Cerca per nome, email o telefono..."
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            className="w-full bg-white/5 border border-white/10 text-white placeholder-white/30 rounded-xl pl-9 pr-4 py-2.5 text-sm focus:outline-none focus:border-[#C0392B]"
+          />
+        </div>
+      </div>
+
+      {/* Stats rapide */}
+      <div className="px-4 pb-3 grid grid-cols-4 gap-2">
+        {(['active', 'trial', 'expired', 'suspended'] as MembershipStatus[]).map(s => {
+          const count = members.filter(m => m.membershipStatus === s).length;
+          return (
+            <div key={s} className={`rounded-xl border p-2 text-center ${STATUS_COLORS[s]}`}>
+              <p className="text-lg font-black">{count}</p>
+              <p className="text-xs opacity-70 capitalize">
+                {s === 'active' ? 'Attivi' : s === 'trial' ? 'Prova' : s === 'expired' ? 'Scaduti' : 'Sosp.'}
+              </p>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Lista soci */}
+      <div className="px-4 space-y-2 pb-6">
+        {loading ? (
+          <div className="flex justify-center mt-12">
+            <div className="w-8 h-8 border-2 border-[#C0392B] border-t-transparent rounded-full animate-spin" />
+          </div>
+        ) : filtered.length === 0 ? (
+          <p className="text-center text-white/30 text-sm mt-12">Nessun socio trovato</p>
+        ) : (
+          filtered.map(member => {
+            const isExpanded = expandedId === member.uid;
+            const isSaving = saving === member.uid;
+            return (
+              <div key={member.uid} className="bg-white/5 border border-white/10 rounded-2xl overflow-hidden">
+                {/* Riga principale */}
+                <button
+                  onClick={() => setExpandedId(isExpanded ? null : member.uid)}
+                  className="w-full p-4 flex items-center gap-3 text-left">
+                  {/* Avatar */}
+                  <div className="w-10 h-10 rounded-full bg-[#4A4A4A] flex items-center justify-center flex-shrink-0 overflow-hidden">
+                    {member.avatarUrl ? (
+                      <img src={member.avatarUrl} className="w-full h-full object-cover" />
+                    ) : (
+                      <span className="text-white font-bold text-sm">
+                        {member.displayName.charAt(0).toUpperCase()}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-white font-bold text-sm truncate">{member.displayName}</p>
+                    <p className="text-white/40 text-xs truncate">{member.email}</p>
+                  </div>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <span className={`text-xs px-2 py-1 rounded-lg border ${STATUS_COLORS[member.membershipStatus]}`}>
+                      {member.membershipStatus === 'active' ? 'Attivo' :
+                       member.membershipStatus === 'trial' ? 'Prova' :
+                       member.membershipStatus === 'expired' ? 'Scaduto' : 'Sosp.'}
+                    </span>
+                    <ChevronDown className={`w-4 h-4 text-white/30 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+                  </div>
+                </button>
+
+                {/* Dettagli espansi */}
+                {isExpanded && (
+                  <div className="border-t border-white/10 p-4 space-y-4">
+                    {/* Contatti */}
+                    <div className="space-y-1">
+                      {member.phone && (
+                        <a href={`tel:${member.phone}`} className="flex items-center gap-2 text-white/50 text-sm hover:text-white">
+                          <Phone className="w-4 h-4" /> {member.phone}
+                        </a>
+                      )}
+                      <a href={`mailto:${member.email}`} className="flex items-center gap-2 text-white/50 text-sm hover:text-white">
+                        <Mail className="w-4 h-4" /> {member.email}
+                      </a>
+                      <p className="flex items-center gap-2 text-white/30 text-xs">
+                        <Calendar className="w-3 h-3" />
+                        Iscritto il {member.createdAt.toLocaleDateString('it-IT')}
+                      </p>
+                    </div>
+
+                    {/* Stato abbonamento */}
+                    <div>
+                      <p className="text-white/50 text-xs mb-2 uppercase tracking-widest">Stato abbonamento</p>
+                      <div className="grid grid-cols-2 gap-2">
+                        {(['active', 'trial', 'expired', 'suspended'] as MembershipStatus[]).map(s => (
+                          <button key={s}
+                            onClick={() => updateMember(member.uid, 'membershipStatus', s)}
+                            disabled={isSaving}
+                            className={`py-2 px-3 rounded-xl text-xs font-bold border transition-all ${
+                              member.membershipStatus === s
+                                ? STATUS_COLORS[s]
+                                : 'bg-white/5 border-white/10 text-white/30 hover:bg-white/10'
+                            }`}>
+                            {s === 'active' ? '✅ Attivo' :
+                             s === 'trial' ? '🆕 Prova' :
+                             s === 'expired' ? '❌ Scaduto' : '⏸️ Sospeso'}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Data scadenza */}
+                    <div>
+                      <p className="text-white/50 text-xs mb-2 uppercase tracking-widest">Scadenza abbonamento</p>
+                      <input
+                        type="date"
+                        defaultValue={member.membershipExpiry
+                          ? member.membershipExpiry.toISOString().split('T')[0]
+                          : ''}
+                        onChange={e => updateExpiry(member.uid, e.target.value)}
+                        className="w-full bg-white/10 text-white border border-white/20 rounded-xl px-4 py-2 text-sm focus:outline-none focus:border-[#C0392B]"
+                      />
+                    </div>
+
+                    {/* Ruolo */}
+                    <div>
+                      <p className="text-white/50 text-xs mb-2 uppercase tracking-widest">Ruolo</p>
+                      <div className="flex gap-2">
+                        {(['member', 'trainer', 'admin'] as UserRole[]).map(r => (
+                          <button key={r}
+                            onClick={() => updateMember(member.uid, 'role', r)}
+                            disabled={isSaving}
+                            className={`flex-1 py-2 rounded-xl text-xs font-bold border transition-all ${
+                              member.role === r
+                                ? 'bg-[#C0392B]/20 border-[#C0392B]/40 text-[#C0392B]'
+                                : 'bg-white/5 border-white/10 text-white/30 hover:bg-white/10'
+                            }`}>
+                            {r === 'member' ? '👤 Socio' : r === 'trainer' ? '💪 Trainer' : '🛡️ Admin'}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {isSaving && (
+                      <p className="text-center text-white/40 text-xs">Salvataggio...</p>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })
+        )}
+      </div>
+    </div>
+  );
+}
