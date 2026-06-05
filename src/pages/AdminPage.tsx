@@ -3,7 +3,7 @@
 // ============================================================
 import React from 'react';
 import { RouteState } from '../types';
-import { ArrowLeft, Users, BookOpen, CalendarDays, Megaphone, Settings } from 'lucide-react';
+import { ArrowLeft, Users, BookOpen, CalendarDays, Megaphone, Settings, TrendingUp } from 'lucide-react';
 
 interface Props { navigate: (r: RouteState) => void; }
 
@@ -53,6 +53,16 @@ export default function AdminPage({ navigate }: Props) {
             <p className="text-white/40 text-xs">Crea e modifica i corsi</p>
           </div>
         </button>
+
+        <button onClick={() => navigate({ page: 'ADMIN_STATISTICHE' })}
+  className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 flex items-center gap-4 hover:bg-white/10 transition-colors text-left">
+  <TrendingUp className="w-6 h-6 text-[#C0392B]" />
+  <div>
+    <p className="text-white font-bold">Statistiche</p>
+    <p className="text-white/40 text-xs">Soci, prenotazioni e andamento</p>
+  </div>
+</button>
+
 
         <button onClick={() => navigate({ page: 'ADMIN_IMPOSTAZIONI' })}
           className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 flex items-center gap-4 hover:bg-white/10 transition-colors text-left">

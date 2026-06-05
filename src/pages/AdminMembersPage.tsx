@@ -2,10 +2,10 @@
 // GHIMNA TROTTA 2.0 — pages/AdminMembersPage.tsx
 // ============================================================
 import React, { useEffect, useState } from 'react';
-import { collection, getDocs, updateDoc, doc, query, orderBy } from 'firebase/firestore';
+import { collection, getDocs, updateDoc, doc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { RouteState, GhimnaUser, MembershipStatus, UserRole } from '../types';
-import { ArrowLeft, Search, ChevronDown, Phone, Mail, Calendar } from 'lucide-react';
+import { ArrowLeft, Search, ChevronDown, Phone, Mail, Calendar, Edit2, Check, X } from 'lucide-react';
 import { MEMBERSHIP_LABELS } from '../constants';
 
 interface Props { navigate: (r: RouteState) => void; }
@@ -23,6 +23,8 @@ export default function AdminMembersPage({ navigate }: Props) {
   const [search, setSearch] = useState('');
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [saving, setSaving] = useState<string | null>(null);
+  const [editingPhone, setEditingPhone] = useState<string | null>(null);
+  const [phoneValue, setPhoneValue] = useState('');
 
   useEffect(() => { loadMembers(); }, []);
 
@@ -56,6 +58,12 @@ export default function AdminMembersPage({ navigate }: Props) {
     await updateDoc(doc(db, 'users', uid), { membershipExpiry: date });
     setMembers(prev => prev.map(m => m.uid === uid ? { ...m, membershipExpiry: date } : m));
     setSaving(null);
+  }
+
+  async function savePhone(uid: string) {
+    const cleaned = phoneValue.replace(/[^0-9]/g, '').slice(0, 10);
+    await updateMember(uid, 'phone', cleaned);
+    setEditingPhone(null);
   }
 
   const filtered = members.filter(m =>
@@ -124,7 +132,6 @@ export default function AdminMembersPage({ navigate }: Props) {
                 <button
                   onClick={() => setExpandedId(isExpanded ? null : member.uid)}
                   className="w-full p-4 flex items-center gap-3 text-left">
-                  {/* Avatar */}
                   <div className="w-10 h-10 rounded-full bg-[#4A4A4A] flex items-center justify-center flex-shrink-0 overflow-hidden">
                     {member.avatarUrl ? (
                       <img src={member.avatarUrl} className="w-full h-full object-cover" />
@@ -152,12 +159,40 @@ export default function AdminMembersPage({ navigate }: Props) {
                 {isExpanded && (
                   <div className="border-t border-white/10 p-4 space-y-4">
                     {/* Contatti */}
-                    <div className="space-y-1">
-                      {member.phone && (
-                        <a href={`tel:${member.phone}`} className="flex items-center gap-2 text-white/50 text-sm hover:text-white">
-                          <Phone className="w-4 h-4" /> {member.phone}
-                        </a>
+                    <div className="space-y-2">
+                      {/* Telefono modificabile */}
+                      {editingPhone === member.uid ? (
+                        <div className="flex items-center gap-2">
+                          <Phone className="w-4 h-4 text-white/30 flex-shrink-0" />
+                          <input
+                            type="tel" inputMode="numeric"
+                            value={phoneValue}
+                            onChange={e => setPhoneValue(e.target.value.replace(/[^0-9]/g, '').slice(0, 10))}
+                            className="flex-1 bg-white/10 text-white border border-white/20 rounded-lg px-2 py-1 text-sm focus:outline-none focus:border-[#C0392B]"
+                            autoFocus
+                          />
+                          <button onClick={() => savePhone(member.uid)}
+                            className="w-6 h-6 bg-green-500/20 rounded flex items-center justify-center text-green-400">
+                            <Check className="w-3 h-3" />
+                          </button>
+                          <button onClick={() => setEditingPhone(null)}
+                            className="w-6 h-6 bg-white/10 rounded flex items-center justify-center text-white/40">
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2">
+                          <a href={`tel:${member.phone}`} className="flex items-center gap-2 text-white/50 text-sm hover:text-white flex-1">
+                            <Phone className="w-4 h-4" />
+                            {member.phone || <span className="text-white/20">Nessun numero</span>}
+                          </a>
+                          <button onClick={() => { setEditingPhone(member.uid); setPhoneValue(member.phone ?? ''); }}
+                            className="text-white/20 hover:text-white/50">
+                            <Edit2 className="w-3 h-3" />
+                          </button>
+                        </div>
                       )}
+
                       <a href={`mailto:${member.email}`} className="flex items-center gap-2 text-white/50 text-sm hover:text-white">
                         <Mail className="w-4 h-4" /> {member.email}
                       </a>
