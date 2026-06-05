@@ -143,20 +143,6 @@ export default function AdminImpostazioniPage({ navigate }: Props) {
             </div>
           )}
         </div>
-
-        {/* Prossimamente */}
-        <div className="bg-white/3 border border-white/5 rounded-2xl p-4">
-          <p className="text-white/30 text-xs uppercase tracking-widest mb-3">Prossimamente</p>
-          <div className="space-y-2">
-            {['Orari di apertura personalizzati', 'Numero massimo prenotazioni per socio', 'Giorni di chiusura automatica'].map(item => (
-              <div key={item} className="flex items-center gap-2 text-white/20">
-                <div className="w-1.5 h-1.5 rounded-full bg-white/20" />
-                <p className="text-xs">{item}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-
       </div>
     </div>
   );
