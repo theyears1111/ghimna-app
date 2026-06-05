@@ -66,9 +66,9 @@ function AppRouter() {
   }
 
   // Email non verificata
-  if (!emailVerified) {
-    return <VerifyEmailPage navigate={navigate} />;
-  }
+  //if (!emailVerified) {
+  //  return <VerifyEmailPage navigate={navigate} />;
+  //}
 
   // App completa
   switch (route.page as PageType) {
