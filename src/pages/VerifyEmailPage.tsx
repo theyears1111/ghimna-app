@@ -26,7 +26,6 @@ export default function VerifyEmailPage({ navigate }: Props) {
       <h1 className="text-white text-2xl font-bold mb-2">Verifica la tua email</h1>
       <p className="text-white/50 text-sm mb-1">Abbiamo inviato un link a</p>
       <p className="text-white font-semibold mb-6">{firebaseUser?.email}</p>
-      // DOPO
 <p className="text-white/40 text-xs mb-8 max-w-xs">
   Clicca il link nell'email per attivare il tuo account. La pagina si aggiornerà automaticamente.
 </p>
