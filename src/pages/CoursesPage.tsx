@@ -1,6 +1,6 @@
 // ============================================================
 // GHIMNA TROTTA 2.0 — pages/CoursesPage.tsx
-// Con supporto lista d'attesa + limite cancellazione
+// Con filtri, 2 settimane, foto e dettaglio corso
 // ============================================================
 
 import React, { useEffect, useState } from 'react';
@@ -13,7 +13,7 @@ import { db } from '../firebase';
 import { useAuth } from '../AuthContext';
 import { RouteState } from '../types';
 import { DAYS_IT, COURSES_INFO } from '../constants';
-import { ChevronLeft, ChevronRight, Clock, Users, AlertCircle } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Clock, Users, AlertCircle, X, Filter } from 'lucide-react';
 
 interface Props { navigate: (r: RouteState) => void; }
 
@@ -35,12 +35,13 @@ interface GymSettings {
   cancellationHoursLimit: number;
 }
 
-function getWeekDays() {
+// Genera 2 settimane di giorni (lun-sab)
+function getTwoWeeks() {
   const today = new Date();
   const day = today.getDay();
   const monday = new Date(today);
   monday.setDate(today.getDate() - (day === 0 ? 6 : day - 1));
-  return Array.from({ length: 6 }, (_, i) => {
+  return Array.from({ length: 12 }, (_, i) => {
     const d = new Date(monday);
     d.setDate(monday.getDate() + i);
     return d;
@@ -64,7 +65,7 @@ function canCancel(slot: Slot, selectedDate: Date, settings: GymSettings): boole
 
 export default function CoursesPage({ navigate }: Props) {
   const { user } = useAuth();
-  const weekDays = getWeekDays();
+  const allDays = getTwoWeeks();
   const today = new Date();
 
   const [selectedDate, setSelectedDate] = useState<Date>(today);
@@ -76,6 +77,14 @@ export default function CoursesPage({ navigate }: Props) {
   const [actionInProgress, setActionInProgress] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
+
+  // Filtri
+  const [filterCourse, setFilterCourse] = useState<string>('');
+  const [filterTrainer, setFilterTrainer] = useState<string>('');
+  const [showFilters, setShowFilters] = useState(false);
+
+  // Dettaglio corso
+  const [detailSlot, setDetailSlot] = useState<Slot | null>(null);
 
   useEffect(() => { loadSlots(); }, [selectedDate]);
   useEffect(() => { if (user) loadMyStatus(); }, [user, selectedDate]);
@@ -115,7 +124,6 @@ export default function CoursesPage({ navigate }: Props) {
   async function loadMyStatus() {
     if (!user) return;
     const dateStr = selectedDate.toISOString().split('T')[0];
-
     const bSnap = await getDocs(query(
       collection(db, 'bookings'),
       where('userId', '==', user.uid),
@@ -141,13 +149,11 @@ export default function CoursesPage({ navigate }: Props) {
     setActionInProgress(slot.id);
     setErrorMsg('');
     const dateStr = selectedDate.toISOString().split('T')[0];
-
     try {
       const alreadyBooked = myBookings[slot.id];
       const alreadyWaiting = myWaitlist[slot.id];
 
       if (alreadyBooked) {
-        // Controlla limite cancellazione
         if (!canCancel(slot, selectedDate, settings)) {
           setErrorMsg(`Non puoi cancellare meno di ${settings.cancellationHoursLimit} ore prima del corso.`);
           setTimeout(() => setErrorMsg(''), 4000);
@@ -160,12 +166,10 @@ export default function CoursesPage({ navigate }: Props) {
         setMyBookings(prev => { const n = { ...prev }; delete n[slot.id]; return n; });
         setSlots(prev => prev.map(s => s.id === slot.id ? { ...s, currentBookings: s.currentBookings - 1 } : s));
         showSuccess('Prenotazione cancellata');
-
       } else if (alreadyWaiting) {
         await deleteDoc(doc(db, 'waitlist', alreadyWaiting));
         setMyWaitlist(prev => { const n = { ...prev }; delete n[slot.id]; return n; });
-        showSuccess('Rimosso dalla lista d\'attesa');
-
+        showSuccess("Rimosso dalla lista d'attesa");
       } else if (slot.currentBookings >= slot.maxCapacity) {
         const wSnap = await getDocs(query(
           collection(db, 'waitlist'),
@@ -174,29 +178,18 @@ export default function CoursesPage({ navigate }: Props) {
         ));
         const position = wSnap.size + 1;
         const wRef = await addDoc(collection(db, 'waitlist'), {
-          userId: user.uid,
-          userName: user.displayName,
-          slotId: slot.id,
-          courseKey: slot.courseKey,
-          courseName: slot.courseName,
-          date: dateStr,
-          startTime: slot.startTime,
-          position,
+          userId: user.uid, userName: user.displayName,
+          slotId: slot.id, courseKey: slot.courseKey, courseName: slot.courseName,
+          date: dateStr, startTime: slot.startTime, position,
           createdAt: serverTimestamp(),
         });
         setMyWaitlist(prev => ({ ...prev, [slot.id]: wRef.id }));
         showSuccess(`Sei in lista d'attesa (posizione ${position})`);
-
       } else {
         const bRef = await addDoc(collection(db, 'bookings'), {
-          userId: user.uid,
-          userName: user.displayName,
-          slotId: slot.id,
-          courseKey: slot.courseKey,
-          courseName: slot.courseName,
-          date: dateStr,
-          startTime: slot.startTime,
-          status: 'confirmed',
+          userId: user.uid, userName: user.displayName,
+          slotId: slot.id, courseKey: slot.courseKey, courseName: slot.courseName,
+          date: dateStr, startTime: slot.startTime, status: 'confirmed',
           createdAt: serverTimestamp(),
         });
         await updateDoc(doc(db, 'slots', slot.id), { currentBookings: increment(1) });
@@ -206,6 +199,7 @@ export default function CoursesPage({ navigate }: Props) {
       }
     } catch (e) { console.error(e); }
     setActionInProgress(null);
+    setDetailSlot(null);
   }
 
   async function notifyFirstInWaitlist(slot: Slot, dateStr: string) {
@@ -215,19 +209,13 @@ export default function CoursesPage({ navigate }: Props) {
       where('date', '==', dateStr)
     ));
     if (wSnap.empty) return;
-    const sorted = wSnap.docs
-      .map(d => ({ id: d.id, ...d.data() } as any))
-      .sort((a, b) => a.position - b.position);
+    const sorted = wSnap.docs.map(d => ({ id: d.id, ...d.data() } as any)).sort((a, b) => a.position - b.position);
     const first = sorted[0];
     await addDoc(collection(db, 'notifications'), {
-      userId: first.userId,
-      type: 'waitlist_available',
+      userId: first.userId, type: 'waitlist_available',
       title: '🎉 Posto disponibile!',
       message: `Si è liberato un posto per ${slot.courseName} (${slot.startTime}). Prenota subito!`,
-      slotId: slot.id,
-      date: dateStr,
-      read: false,
-      createdAt: serverTimestamp(),
+      slotId: slot.id, date: dateStr, read: false, createdAt: serverTimestamp(),
     });
   }
 
@@ -244,6 +232,24 @@ export default function CoursesPage({ navigate }: Props) {
     return slotDate < new Date();
   };
 
+  // Ottieni istruttori unici dagli slot
+  const trainers = [...new Set(slots.map(s => s.trainerName).filter(Boolean))];
+  const courseKeys = [...new Set(slots.map(s => s.courseKey))];
+
+  // Applica filtri
+  const filteredSlots = slots.filter(slot => {
+    if (filterCourse && slot.courseKey !== filterCourse) return false;
+    if (filterTrainer && slot.trainerName !== filterTrainer) return false;
+    return true;
+  });
+
+  const hasActiveFilters = filterCourse || filterTrainer;
+
+  // Settimana corrente (0-5) e prossima (6-11)
+  const week1 = allDays.slice(0, 6);
+  const week2 = allDays.slice(6, 12);
+  const isWeek2 = allDays.slice(6).some(d => isSameDay(d, selectedDate));
+
   return (
     <div className="min-h-screen bg-[#2C2C2C] flex flex-col">
       {/* Header */}
@@ -251,28 +257,94 @@ export default function CoursesPage({ navigate }: Props) {
         <button onClick={() => navigate({ page: 'DASHBOARD' })} className="text-white/60 hover:text-white">
           <ChevronLeft className="w-5 h-5" />
         </button>
-        <h1 className="text-white font-bold text-lg">Corsi</h1>
+        <h1 className="text-white font-bold text-lg flex-1">Corsi</h1>
+        <button onClick={() => setShowFilters(!showFilters)}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-colors ${
+            hasActiveFilters ? 'bg-[#C0392B] text-white' : 'bg-white/10 text-white/60'
+          }`}>
+          <Filter className="w-3.5 h-3.5" />
+          Filtri {hasActiveFilters && '●'}
+        </button>
       </div>
 
-      {/* Selettore giorni */}
-      <div className="bg-[#1a1a1a] px-2 pb-3 flex gap-1 overflow-x-auto">
-        {weekDays.map((date, i) => {
-          const isSelected = isSameDay(date, selectedDate);
-          const isToday = isSameDay(date, today);
-          const isPastDay = date < today && !isToday;
-          return (
-            <button key={i} onClick={() => setSelectedDate(date)}
-              className={`flex flex-col items-center min-w-[48px] py-2 px-1 rounded-xl transition-colors ${
-                isSelected ? 'bg-[#C0392B] text-white' :
-                isPastDay ? 'text-white/20' : 'text-white/60 hover:text-white'
-              }`}>
-              <span className="text-xs font-medium">{DAYS_IT[date.getDay()]}</span>
-              <span className={`text-lg font-black ${isToday && !isSelected ? 'text-[#C0392B]' : ''}`}>
-                {date.getDate()}
-              </span>
-            </button>
-          );
-        })}
+      {/* Filtri */}
+      {showFilters && (
+        <div className="bg-[#1a1a1a] px-4 pb-4 space-y-3 border-b border-white/5">
+          {/* Tipo corso */}
+          <div>
+            <p className="text-white/40 text-xs mb-2">Tipo corso</p>
+            <div className="flex gap-2 overflow-x-auto pb-1">
+              <button onClick={() => setFilterCourse('')}
+                className={`flex-shrink-0 px-3 py-1.5 rounded-lg text-xs font-bold ${!filterCourse ? 'bg-[#C0392B] text-white' : 'bg-white/10 text-white/50'}`}>
+                Tutti
+              </button>
+              {courseKeys.map(key => {
+                const info = COURSES_INFO[key] ?? { label: key, emoji: '🏋️' };
+                return (
+                  <button key={key} onClick={() => setFilterCourse(filterCourse === key ? '' : key)}
+                    className={`flex-shrink-0 px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 ${filterCourse === key ? 'bg-[#C0392B] text-white' : 'bg-white/10 text-white/50'}`}>
+                    {info.emoji} {info.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Istruttore */}
+          {trainers.length > 0 && (
+            <div>
+              <p className="text-white/40 text-xs mb-2">Istruttore</p>
+              <div className="flex gap-2 overflow-x-auto pb-1">
+                <button onClick={() => setFilterTrainer('')}
+                  className={`flex-shrink-0 px-3 py-1.5 rounded-lg text-xs font-bold ${!filterTrainer ? 'bg-[#C0392B] text-white' : 'bg-white/10 text-white/50'}`}>
+                  Tutti
+                </button>
+                {trainers.map(t => (
+                  <button key={t} onClick={() => setFilterTrainer(filterTrainer === t ? '' : t)}
+                    className={`flex-shrink-0 px-3 py-1.5 rounded-lg text-xs font-bold ${filterTrainer === t ? 'bg-[#C0392B] text-white' : 'bg-white/10 text-white/50'}`}>
+                    👤 {t}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Selettore settimane */}
+      <div className="bg-[#1a1a1a] border-b border-white/5">
+        {/* Tab settimane */}
+        <div className="flex px-4 pt-2 gap-4">
+          <button onClick={() => setSelectedDate(week1.find(d => d >= today) ?? week1[0])}
+            className={`text-xs font-bold pb-2 border-b-2 transition-colors ${!isWeek2 ? 'border-[#C0392B] text-white' : 'border-transparent text-white/30'}`}>
+            Questa settimana
+          </button>
+          <button onClick={() => setSelectedDate(week2[0])}
+            className={`text-xs font-bold pb-2 border-b-2 transition-colors ${isWeek2 ? 'border-[#C0392B] text-white' : 'border-transparent text-white/30'}`}>
+            Prossima settimana
+          </button>
+        </div>
+
+        {/* Giorni della settimana attiva */}
+        <div className="px-2 pb-3 flex gap-1 overflow-x-auto">
+          {(isWeek2 ? week2 : week1).map((date, i) => {
+            const isSelected = isSameDay(date, selectedDate);
+            const isToday = isSameDay(date, today);
+            const isPastDay = date < today && !isToday;
+            return (
+              <button key={i} onClick={() => setSelectedDate(date)}
+                className={`flex flex-col items-center min-w-[48px] py-2 px-1 rounded-xl transition-colors ${
+                  isSelected ? 'bg-[#C0392B] text-white' :
+                  isPastDay ? 'text-white/20' : 'text-white/60 hover:text-white'
+                }`}>
+                <span className="text-xs font-medium">{DAYS_IT[date.getDay()]}</span>
+                <span className={`text-lg font-black ${isToday && !isSelected ? 'text-[#C0392B]' : ''}`}>
+                  {date.getDate()}
+                </span>
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {successMsg && (
@@ -282,8 +354,7 @@ export default function CoursesPage({ navigate }: Props) {
       )}
       {errorMsg && (
         <div className="mx-4 mt-3 bg-red-500/20 border border-red-500/40 text-red-300 text-sm px-4 py-2 rounded-xl flex items-center gap-2">
-          <AlertCircle className="w-4 h-4 flex-shrink-0" />
-          {errorMsg}
+          <AlertCircle className="w-4 h-4 flex-shrink-0" />{errorMsg}
         </div>
       )}
 
@@ -293,15 +364,20 @@ export default function CoursesPage({ navigate }: Props) {
           <div className="flex items-center justify-center mt-16">
             <div className="w-8 h-8 border-2 border-[#C0392B] border-t-transparent rounded-full animate-spin" />
           </div>
-        ) : slots.length === 0 ? (
+        ) : filteredSlots.length === 0 ? (
           <div className="text-center mt-16 text-white/30">
-            <p className="text-4xl mb-3">😴</p>
-            <p className="font-medium">Nessun corso oggi</p>
-            <p className="text-xs mt-1">Seleziona un altro giorno</p>
+            <p className="text-4xl mb-3">{hasActiveFilters ? '🔍' : '😴'}</p>
+            <p className="font-medium">{hasActiveFilters ? 'Nessun corso con questi filtri' : 'Nessun corso oggi'}</p>
+            {hasActiveFilters && (
+              <button onClick={() => { setFilterCourse(''); setFilterTrainer(''); }}
+                className="mt-3 text-[#C0392B] text-sm font-semibold">
+                Rimuovi filtri
+              </button>
+            )}
           </div>
         ) : (
-          slots.map(slot => {
-            const info = COURSES_INFO[slot.courseKey] ?? { emoji: '🏋️', label: slot.courseName };
+          filteredSlots.map(slot => {
+            const info = COURSES_INFO[slot.courseKey] ?? { emoji: '🏋️', label: slot.courseName, image: '', color: '#C0392B', description: '' };
             const booked = !!myBookings[slot.id];
             const waiting = !!myWaitlist[slot.id];
             const full = slot.currentBookings >= slot.maxCapacity;
@@ -311,49 +387,53 @@ export default function CoursesPage({ navigate }: Props) {
 
             return (
               <div key={slot.id}
-                className={`rounded-2xl border p-4 transition-all ${
-                  booked ? 'bg-[#C0392B]/10 border-[#C0392B]/40' :
-                  waiting ? 'bg-yellow-500/10 border-yellow-500/30' :
-                  'bg-white/5 border-white/10'
+                onClick={() => setDetailSlot(slot)}
+                className={`rounded-2xl border overflow-hidden transition-all cursor-pointer ${
+                  booked ? 'border-[#C0392B]/40' :
+                  waiting ? 'border-yellow-500/30' :
+                  'border-white/10'
                 }`}>
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex items-start gap-3 flex-1">
-                    <span className="text-2xl mt-0.5">{info.emoji}</span>
-                    <div className="flex-1">
-                      <p className="text-white font-bold">{slot.courseName}</p>
-                      <div className="flex items-center gap-3 mt-1 flex-wrap">
+                {/* Foto corso */}
+                {info.image && (
+                  <div className="relative h-32 overflow-hidden">
+                    <img src={info.image} alt={info.label} className="w-full h-full object-cover" />
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent" />
+                    <div className="absolute bottom-2 left-3 right-3 flex items-end justify-between">
+                      <div>
+                        <p className="text-white font-black text-base leading-tight">{slot.courseName}</p>
+                        {slot.room && <p className="text-white/60 text-xs">{slot.room}</p>}
+                      </div>
+                      {booked && <span className="bg-[#C0392B] text-white text-xs font-bold px-2 py-0.5 rounded-lg">Prenotato</span>}
+                      {waiting && <span className="bg-yellow-500 text-black text-xs font-bold px-2 py-0.5 rounded-lg">In attesa</span>}
+                    </div>
+                  </div>
+                )}
+
+                {/* Info slot */}
+                <div className={`p-3 flex items-center justify-between gap-3 ${
+                  booked ? 'bg-[#C0392B]/10' : waiting ? 'bg-yellow-500/10' : 'bg-white/5'
+                }`}>
+                  <div className="flex items-center gap-3 flex-1 min-w-0">
+                    {!info.image && <span className="text-2xl">{info.emoji}</span>}
+                    <div className="min-w-0">
+                      {!info.image && <p className="text-white font-bold text-sm truncate">{slot.courseName}</p>}
+                      <div className="flex items-center gap-3 flex-wrap">
                         <span className="flex items-center gap-1 text-white/50 text-xs">
-                          <Clock className="w-3 h-3" />
-                          {slot.startTime} – {slot.endTime}
+                          <Clock className="w-3 h-3" />{slot.startTime} – {slot.endTime}
                         </span>
                         <span className="flex items-center gap-1 text-white/50 text-xs">
                           <Users className="w-3 h-3" />
-                          {full ? (
-                            <span className="text-red-400">Completo</span>
-                          ) : (
-                            <span className={spots <= 3 ? 'text-yellow-400' : ''}>
-                              {spots} {spots === 1 ? 'posto' : 'posti'}
-                            </span>
-                          )}
+                          {full ? <span className="text-red-400">Completo</span> :
+                            <span className={spots <= 3 ? 'text-yellow-400' : ''}>{spots} {spots === 1 ? 'posto' : 'posti'}</span>}
                         </span>
-                        {slot.room && <span className="text-white/30 text-xs">{slot.room}</span>}
                       </div>
-                      {slot.trainerName && <p className="text-white/30 text-xs mt-1">👤 {slot.trainerName}</p>}
-                      {waiting && (
-                        <p className="text-yellow-400 text-xs mt-1 flex items-center gap-1">
-                          <AlertCircle className="w-3 h-3" /> Sei in lista d'attesa
-                        </p>
-                      )}
-                      {booked && !cancellable && (
-                        <p className="text-white/30 text-xs mt-1">🔒 Cancellazione non più disponibile</p>
-                      )}
+                      {slot.trainerName && <p className="text-white/30 text-xs">👤 {slot.trainerName}</p>}
                     </div>
                   </div>
 
-                  {/* Bottone azione */}
                   {!past ? (
                     <button
-                      onClick={() => handleBook(slot)}
+                      onClick={e => { e.stopPropagation(); handleBook(slot); }}
                       disabled={actionInProgress === slot.id || (booked && !cancellable)}
                       className={`flex-shrink-0 px-3 py-2 rounded-xl text-xs font-bold transition-all ${
                         booked && !cancellable ? 'bg-white/5 border border-white/10 text-white/20 cursor-not-allowed' :
@@ -379,6 +459,94 @@ export default function CoursesPage({ navigate }: Props) {
           })
         )}
       </div>
+
+      {/* Modal dettaglio corso */}
+      {detailSlot && (() => {
+        const info = COURSES_INFO[detailSlot.courseKey] ?? { emoji: '🏋️', label: detailSlot.courseName, image: '', color: '#C0392B', description: '' };
+        const booked = !!myBookings[detailSlot.id];
+        const waiting = !!myWaitlist[detailSlot.id];
+        const full = detailSlot.currentBookings >= detailSlot.maxCapacity;
+        const past = isPast(detailSlot);
+        const cancellable = canCancel(detailSlot, selectedDate, settings);
+        const spots = detailSlot.maxCapacity - detailSlot.currentBookings;
+        return (
+          <div className="fixed inset-0 bg-black/80 z-50 flex items-end">
+            <div className="bg-[#1e1e1e] w-full rounded-t-2xl overflow-hidden max-h-[85vh] flex flex-col">
+              {/* Foto */}
+              {info.image && (
+                <div className="relative h-48 flex-shrink-0">
+                  <img src={info.image} alt={info.label} className="w-full h-full object-cover" />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
+                  <button onClick={() => setDetailSlot(null)}
+                    className="absolute top-3 right-3 w-8 h-8 bg-black/50 rounded-full flex items-center justify-center text-white">
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
+
+              <div className="flex-1 overflow-y-auto p-5 space-y-4">
+                {!info.image && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-4xl">{info.emoji}</span>
+                    <button onClick={() => setDetailSlot(null)} className="text-white/40 hover:text-white">
+                      <X className="w-5 h-5" />
+                    </button>
+                  </div>
+                )}
+
+                <div>
+                  <h2 className="text-white font-black text-2xl">{detailSlot.courseName}</h2>
+                  {detailSlot.room && <p className="text-white/40 text-sm">{detailSlot.room}</p>}
+                </div>
+
+                {info.description && (
+                  <p className="text-white/60 text-sm leading-relaxed">{info.description}</p>
+                )}
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="bg-white/5 rounded-xl p-3">
+                    <p className="text-white/40 text-xs mb-1">Orario</p>
+                    <p className="text-white font-bold">{detailSlot.startTime} – {detailSlot.endTime}</p>
+                  </div>
+                  <div className="bg-white/5 rounded-xl p-3">
+                    <p className="text-white/40 text-xs mb-1">Posti</p>
+                    <p className={`font-bold ${full ? 'text-red-400' : spots <= 3 ? 'text-yellow-400' : 'text-white'}`}>
+                      {full ? 'Completo' : `${spots} disponibili`}
+                    </p>
+                  </div>
+                  {detailSlot.trainerName && (
+                    <div className="bg-white/5 rounded-xl p-3 col-span-2">
+                      <p className="text-white/40 text-xs mb-1">Istruttore</p>
+                      <p className="text-white font-bold">👤 {detailSlot.trainerName}</p>
+                    </div>
+                  )}
+                </div>
+
+                {!past && (
+                  <button
+                    onClick={() => handleBook(detailSlot)}
+                    disabled={actionInProgress === detailSlot.id || (booked && !cancellable)}
+                    className={`w-full py-4 rounded-2xl font-bold text-base transition-all ${
+                      booked && !cancellable ? 'bg-white/5 text-white/20 cursor-not-allowed' :
+                      booked ? 'bg-[#C0392B]/20 text-[#C0392B] border border-[#C0392B]/40' :
+                      waiting ? 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30' :
+                      full ? 'bg-yellow-500 text-black' :
+                      'bg-[#C0392B] text-white hover:bg-[#96281B]'
+                    }`}>
+                    {actionInProgress === detailSlot.id
+                      ? 'Caricamento...'
+                      : booked && !cancellable ? '🔒 Cancellazione non disponibile'
+                      : booked ? 'Annulla prenotazione'
+                      : waiting ? "Esci dalla lista d'attesa"
+                      : full ? "⏳ Entra in lista d'attesa"
+                      : 'Prenota questo corso'}
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
