@@ -6,7 +6,7 @@ import { collection, getDocs, updateDoc, doc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { RouteState, GhimnaUser, MembershipStatus, UserRole } from '../types';
 import { ArrowLeft, Search, ChevronDown, Phone, Mail, Calendar, Edit2, Check, X } from 'lucide-react';
-import { MEMBERSHIP_LABELS } from '../constants';
+import { MEMBERSHIP_LABELS, COURSES_INFO } from '../constants';
 
 interface Props { navigate: (r: RouteState) => void; }
 
@@ -25,6 +25,8 @@ export default function AdminMembersPage({ navigate }: Props) {
   const [saving, setSaving] = useState<string | null>(null);
   const [editingPhone, setEditingPhone] = useState<string | null>(null);
   const [phoneValue, setPhoneValue] = useState('');
+  const [editingBio, setEditingBio] = useState<string | null>(null);
+  const [bioValue, setBioValue] = useState('');
 
   useEffect(() => { loadMembers(); }, []);
 
@@ -66,6 +68,18 @@ export default function AdminMembersPage({ navigate }: Props) {
     setEditingPhone(null);
   }
 
+  async function saveBio(uid: string) {
+    await updateMember(uid, 'bio', bioValue.trim());
+    setEditingBio(null);
+  }
+
+  async function toggleSpecialty(uid: string, key: string, currentSpecialties: string[]) {
+    const updated = currentSpecialties.includes(key)
+      ? currentSpecialties.filter(s => s !== key)
+      : [...currentSpecialties, key];
+    await updateMember(uid, 'specialties', updated);
+  }
+
   const filtered = members.filter(m =>
     m.displayName.toLowerCase().includes(search.toLowerCase()) ||
     m.email.toLowerCase().includes(search.toLowerCase()) ||
@@ -89,11 +103,8 @@ export default function AdminMembersPage({ navigate }: Props) {
       <div className="px-4 py-3">
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30" />
-          <input
-            type="text"
-            placeholder="Cerca per nome, email o telefono..."
-            value={search}
-            onChange={e => setSearch(e.target.value)}
+          <input type="text" placeholder="Cerca per nome, email o telefono..."
+            value={search} onChange={e => setSearch(e.target.value)}
             className="w-full bg-white/5 border border-white/10 text-white placeholder-white/30 rounded-xl pl-9 pr-4 py-2.5 text-sm focus:outline-none focus:border-[#C0392B]"
           />
         </div>
@@ -106,9 +117,7 @@ export default function AdminMembersPage({ navigate }: Props) {
           return (
             <div key={s} className={`rounded-xl border p-2 text-center ${STATUS_COLORS[s]}`}>
               <p className="text-lg font-black">{count}</p>
-              <p className="text-xs opacity-70 capitalize">
-                {s === 'active' ? 'Attivi' : s === 'trial' ? 'Prova' : s === 'expired' ? 'Scaduti' : 'Sosp.'}
-              </p>
+              <p className="text-xs opacity-70">{s === 'active' ? 'Attivi' : s === 'trial' ? 'Prova' : s === 'expired' ? 'Scaduti' : 'Sosp.'}</p>
             </div>
           );
         })}
@@ -126,23 +135,22 @@ export default function AdminMembersPage({ navigate }: Props) {
           filtered.map(member => {
             const isExpanded = expandedId === member.uid;
             const isSaving = saving === member.uid;
+            const isTrainer = member.role === 'trainer' || member.role === 'admin';
             return (
               <div key={member.uid} className="bg-white/5 border border-white/10 rounded-2xl overflow-hidden">
-                {/* Riga principale */}
-                <button
-                  onClick={() => setExpandedId(isExpanded ? null : member.uid)}
+                <button onClick={() => setExpandedId(isExpanded ? null : member.uid)}
                   className="w-full p-4 flex items-center gap-3 text-left">
                   <div className="w-10 h-10 rounded-full bg-[#4A4A4A] flex items-center justify-center flex-shrink-0 overflow-hidden">
-                    {member.avatarUrl ? (
-                      <img src={member.avatarUrl} className="w-full h-full object-cover" />
-                    ) : (
-                      <span className="text-white font-bold text-sm">
-                        {member.displayName.charAt(0).toUpperCase()}
-                      </span>
-                    )}
+                    {member.avatarUrl
+                      ? <img src={member.avatarUrl} className="w-full h-full object-cover" />
+                      : <span className="text-white font-bold text-sm">{member.displayName.charAt(0).toUpperCase()}</span>
+                    }
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-white font-bold text-sm truncate">{member.displayName}</p>
+                    <div className="flex items-center gap-2">
+                      <p className="text-white font-bold text-sm truncate">{member.displayName}</p>
+                      {isTrainer && <span className="text-xs bg-[#C0392B]/20 text-[#C0392B] px-1.5 py-0.5 rounded flex-shrink-0">💪 Trainer</span>}
+                    </div>
                     <p className="text-white/40 text-xs truncate">{member.email}</p>
                   </div>
                   <div className="flex items-center gap-2 flex-shrink-0">
@@ -155,30 +163,18 @@ export default function AdminMembersPage({ navigate }: Props) {
                   </div>
                 </button>
 
-                {/* Dettagli espansi */}
                 {isExpanded && (
                   <div className="border-t border-white/10 p-4 space-y-4">
                     {/* Contatti */}
                     <div className="space-y-2">
-                      {/* Telefono modificabile */}
                       {editingPhone === member.uid ? (
                         <div className="flex items-center gap-2">
                           <Phone className="w-4 h-4 text-white/30 flex-shrink-0" />
-                          <input
-                            type="tel" inputMode="numeric"
-                            value={phoneValue}
+                          <input type="tel" inputMode="numeric" value={phoneValue}
                             onChange={e => setPhoneValue(e.target.value.replace(/[^0-9]/g, '').slice(0, 10))}
-                            className="flex-1 bg-white/10 text-white border border-white/20 rounded-lg px-2 py-1 text-sm focus:outline-none focus:border-[#C0392B]"
-                            autoFocus
-                          />
-                          <button onClick={() => savePhone(member.uid)}
-                            className="w-6 h-6 bg-green-500/20 rounded flex items-center justify-center text-green-400">
-                            <Check className="w-3 h-3" />
-                          </button>
-                          <button onClick={() => setEditingPhone(null)}
-                            className="w-6 h-6 bg-white/10 rounded flex items-center justify-center text-white/40">
-                            <X className="w-3 h-3" />
-                          </button>
+                            className="flex-1 bg-white/10 text-white border border-white/20 rounded-lg px-2 py-1 text-sm focus:outline-none focus:border-[#C0392B]" autoFocus />
+                          <button onClick={() => savePhone(member.uid)} className="w-6 h-6 bg-green-500/20 rounded flex items-center justify-center text-green-400"><Check className="w-3 h-3" /></button>
+                          <button onClick={() => setEditingPhone(null)} className="w-6 h-6 bg-white/10 rounded flex items-center justify-center text-white/40"><X className="w-3 h-3" /></button>
                         </div>
                       ) : (
                         <div className="flex items-center gap-2">
@@ -186,38 +182,76 @@ export default function AdminMembersPage({ navigate }: Props) {
                             <Phone className="w-4 h-4" />
                             {member.phone || <span className="text-white/20">Nessun numero</span>}
                           </a>
-                          <button onClick={() => { setEditingPhone(member.uid); setPhoneValue(member.phone ?? ''); }}
-                            className="text-white/20 hover:text-white/50">
+                          <button onClick={() => { setEditingPhone(member.uid); setPhoneValue(member.phone ?? ''); }} className="text-white/20 hover:text-white/50">
                             <Edit2 className="w-3 h-3" />
                           </button>
                         </div>
                       )}
-
                       <a href={`mailto:${member.email}`} className="flex items-center gap-2 text-white/50 text-sm hover:text-white">
                         <Mail className="w-4 h-4" /> {member.email}
                       </a>
                       <p className="flex items-center gap-2 text-white/30 text-xs">
-                        <Calendar className="w-3 h-3" />
-                        Iscritto il {member.createdAt.toLocaleDateString('it-IT')}
+                        <Calendar className="w-3 h-3" /> Iscritto il {member.createdAt.toLocaleDateString('it-IT')}
                       </p>
                     </div>
+
+                    {/* Bio e specialità — solo per trainer/admin */}
+                    {isTrainer && (
+                      <div className="space-y-3 bg-[#C0392B]/5 border border-[#C0392B]/10 rounded-xl p-3">
+                        <p className="text-[#C0392B] text-xs font-bold uppercase tracking-widest">Profilo Trainer</p>
+
+                        {/* Bio */}
+                        <div>
+                          <p className="text-white/50 text-xs mb-1">Bio</p>
+                          {editingBio === member.uid ? (
+                            <div className="space-y-2">
+                              <textarea value={bioValue} onChange={e => setBioValue(e.target.value)}
+                                rows={3} placeholder="Descrizione dell'istruttore..."
+                                className="w-full bg-white/10 text-white placeholder-white/30 border border-white/20 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#C0392B] resize-none" autoFocus />
+                              <div className="flex gap-2">
+                                <button onClick={() => saveBio(member.uid)} className="flex-1 bg-green-500/20 text-green-400 text-xs font-bold py-1.5 rounded-lg flex items-center justify-center gap-1"><Check className="w-3 h-3" /> Salva</button>
+                                <button onClick={() => setEditingBio(null)} className="flex-1 bg-white/10 text-white/40 text-xs font-bold py-1.5 rounded-lg">Annulla</button>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="flex items-start gap-2">
+                              <p className="text-white/60 text-sm flex-1">{member.bio || <span className="text-white/20 italic">Nessuna bio inserita</span>}</p>
+                              <button onClick={() => { setEditingBio(member.uid); setBioValue(member.bio ?? ''); }} className="text-white/20 hover:text-white/50 flex-shrink-0">
+                                <Edit2 className="w-3 h-3" />
+                              </button>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Specialità */}
+                        <div>
+                          <p className="text-white/50 text-xs mb-2">Specialità</p>
+                          <div className="flex flex-wrap gap-2">
+                            {Object.entries(COURSES_INFO).map(([key, info]) => {
+                              const selected = (member.specialties ?? []).includes(key);
+                              return (
+                                <button key={key}
+                                  onClick={() => toggleSpecialty(member.uid, key, member.specialties ?? [])}
+                                  className={`px-2 py-1 rounded-lg text-xs font-bold border transition-all ${
+                                    selected ? 'bg-[#C0392B]/20 border-[#C0392B]/40 text-[#C0392B]' : 'bg-white/5 border-white/10 text-white/30'
+                                  }`}>
+                                  {info.emoji} {info.label}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </div>
+                    )}
 
                     {/* Stato abbonamento */}
                     <div>
                       <p className="text-white/50 text-xs mb-2 uppercase tracking-widest">Stato abbonamento</p>
                       <div className="grid grid-cols-2 gap-2">
                         {(['active', 'trial', 'expired', 'suspended'] as MembershipStatus[]).map(s => (
-                          <button key={s}
-                            onClick={() => updateMember(member.uid, 'membershipStatus', s)}
-                            disabled={isSaving}
-                            className={`py-2 px-3 rounded-xl text-xs font-bold border transition-all ${
-                              member.membershipStatus === s
-                                ? STATUS_COLORS[s]
-                                : 'bg-white/5 border-white/10 text-white/30 hover:bg-white/10'
-                            }`}>
-                            {s === 'active' ? '✅ Attivo' :
-                             s === 'trial' ? '🆕 Prova' :
-                             s === 'expired' ? '❌ Scaduto' : '⏸️ Sospeso'}
+                          <button key={s} onClick={() => updateMember(member.uid, 'membershipStatus', s)} disabled={isSaving}
+                            className={`py-2 px-3 rounded-xl text-xs font-bold border transition-all ${member.membershipStatus === s ? STATUS_COLORS[s] : 'bg-white/5 border-white/10 text-white/30 hover:bg-white/10'}`}>
+                            {s === 'active' ? '✅ Attivo' : s === 'trial' ? '🆕 Prova' : s === 'expired' ? '❌ Scaduto' : '⏸️ Sospeso'}
                           </button>
                         ))}
                       </div>
@@ -226,14 +260,10 @@ export default function AdminMembersPage({ navigate }: Props) {
                     {/* Data scadenza */}
                     <div>
                       <p className="text-white/50 text-xs mb-2 uppercase tracking-widest">Scadenza abbonamento</p>
-                      <input
-                        type="date"
-                        defaultValue={member.membershipExpiry
-                          ? member.membershipExpiry.toISOString().split('T')[0]
-                          : ''}
+                      <input type="date"
+                        defaultValue={member.membershipExpiry ? member.membershipExpiry.toISOString().split('T')[0] : ''}
                         onChange={e => updateExpiry(member.uid, e.target.value)}
-                        className="w-full bg-white/10 text-white border border-white/20 rounded-xl px-4 py-2 text-sm focus:outline-none focus:border-[#C0392B]"
-                      />
+                        className="w-full bg-white/10 text-white border border-white/20 rounded-xl px-4 py-2 text-sm focus:outline-none focus:border-[#C0392B]" />
                     </div>
 
                     {/* Ruolo */}
@@ -241,23 +271,15 @@ export default function AdminMembersPage({ navigate }: Props) {
                       <p className="text-white/50 text-xs mb-2 uppercase tracking-widest">Ruolo</p>
                       <div className="flex gap-2">
                         {(['member', 'trainer', 'admin'] as UserRole[]).map(r => (
-                          <button key={r}
-                            onClick={() => updateMember(member.uid, 'role', r)}
-                            disabled={isSaving}
-                            className={`flex-1 py-2 rounded-xl text-xs font-bold border transition-all ${
-                              member.role === r
-                                ? 'bg-[#C0392B]/20 border-[#C0392B]/40 text-[#C0392B]'
-                                : 'bg-white/5 border-white/10 text-white/30 hover:bg-white/10'
-                            }`}>
+                          <button key={r} onClick={() => updateMember(member.uid, 'role', r)} disabled={isSaving}
+                            className={`flex-1 py-2 rounded-xl text-xs font-bold border transition-all ${member.role === r ? 'bg-[#C0392B]/20 border-[#C0392B]/40 text-[#C0392B]' : 'bg-white/5 border-white/10 text-white/30 hover:bg-white/10'}`}>
                             {r === 'member' ? '👤 Socio' : r === 'trainer' ? '💪 Trainer' : '🛡️ Admin'}
                           </button>
                         ))}
                       </div>
                     </div>
 
-                    {isSaving && (
-                      <p className="text-center text-white/40 text-xs">Salvataggio...</p>
-                    )}
+                    {isSaving && <p className="text-center text-white/40 text-xs">Salvataggio...</p>}
                   </div>
                 )}
               </div>

@@ -1,17 +1,16 @@
 // ============================================================
 // GHIMNA TROTTA 2.0 — pages/AdminCoursesPage.tsx
-// Gestione completa slot / orari corsi
 // ============================================================
 
 import React, { useEffect, useState } from 'react';
 import {
   collection, getDocs, addDoc, updateDoc,
-  deleteDoc, doc, serverTimestamp, query, orderBy
+  deleteDoc, doc, serverTimestamp, query, where
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import { RouteState } from '../types';
 import { DAYS_IT, COURSES_INFO } from '../constants';
-import { ArrowLeft, Plus, Trash2, Edit2, Check, X } from 'lucide-react';
+import { ArrowLeft, Plus, Trash2, Edit2, Check, X, Search } from 'lucide-react';
 
 interface Props { navigate: (r: RouteState) => void; }
 
@@ -24,9 +23,17 @@ interface Slot {
   endTime: string;
   room: string;
   trainerName: string;
+  trainerId: string;
   maxCapacity: number;
   currentBookings: number;
   isActive: boolean;
+}
+
+interface TrainerOption {
+  uid: string;
+  displayName: string;
+  email: string;
+  avatarUrl?: string;
 }
 
 const EMPTY_SLOT = {
@@ -37,6 +44,7 @@ const EMPTY_SLOT = {
   endTime: '10:00',
   room: 'Sala Alpha',
   trainerName: '',
+  trainerId: '',
   maxCapacity: 20,
   currentBookings: 0,
   isActive: true,
@@ -46,14 +54,17 @@ const ROOMS = ['Sala Alpha', 'Power Room', 'Flow Room'];
 
 export default function AdminCoursesPage({ navigate }: Props) {
   const [slots, setSlots] = useState<Slot[]>([]);
+  const [trainers, setTrainers] = useState<TrainerOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editingSlot, setEditingSlot] = useState<Slot | null>(null);
   const [form, setForm] = useState({ ...EMPTY_SLOT });
   const [saving, setSaving] = useState(false);
   const [filterDay, setFilterDay] = useState<number | null>(null);
+  const [trainerSearch, setTrainerSearch] = useState('');
+  const [showTrainerDropdown, setShowTrainerDropdown] = useState(false);
 
-  useEffect(() => { loadSlots(); }, []);
+  useEffect(() => { loadSlots(); loadTrainers(); }, []);
 
   async function loadSlots() {
     setLoading(true);
@@ -64,9 +75,25 @@ export default function AdminCoursesPage({ navigate }: Props) {
     setLoading(false);
   }
 
+  async function loadTrainers() {
+    // Carica utenti con ruolo trainer o admin
+    const snap = await getDocs(collection(db, 'users'));
+    const data = snap.docs
+      .map(d => ({ uid: d.id, ...d.data() } as any))
+      .filter((u: any) => u.role === 'trainer' || u.role === 'admin')
+      .map((u: any) => ({
+        uid: u.uid,
+        displayName: u.displayName,
+        email: u.email,
+        avatarUrl: u.avatarUrl,
+      } as TrainerOption));
+    setTrainers(data);
+  }
+
   function openNew() {
     setEditingSlot(null);
     setForm({ ...EMPTY_SLOT });
+    setTrainerSearch('');
     setShowForm(true);
   }
 
@@ -80,10 +107,12 @@ export default function AdminCoursesPage({ navigate }: Props) {
       endTime: slot.endTime,
       room: slot.room,
       trainerName: slot.trainerName,
+      trainerId: slot.trainerId ?? '',
       maxCapacity: slot.maxCapacity,
       currentBookings: slot.currentBookings,
       isActive: slot.isActive,
     });
+    setTrainerSearch(slot.trainerName || '');
     setShowForm(true);
   }
 
@@ -92,14 +121,31 @@ export default function AdminCoursesPage({ navigate }: Props) {
     setForm(f => ({ ...f, courseKey: key, courseName: info?.label ?? key }));
   }
 
+  function selectTrainer(trainer: TrainerOption) {
+    setForm(f => ({ ...f, trainerName: trainer.displayName, trainerId: trainer.uid }));
+    setTrainerSearch(trainer.displayName);
+    setShowTrainerDropdown(false);
+  }
+
+  function clearTrainer() {
+    setForm(f => ({ ...f, trainerName: '', trainerId: '' }));
+    setTrainerSearch('');
+  }
+
+  const filteredTrainers = trainers.filter(t =>
+    t.displayName.toLowerCase().includes(trainerSearch.toLowerCase()) ||
+    t.email.toLowerCase().includes(trainerSearch.toLowerCase())
+  );
+
   async function handleSave() {
     setSaving(true);
     try {
+      const data = { ...form };
       if (editingSlot) {
-        await updateDoc(doc(db, 'slots', editingSlot.id), { ...form });
+        await updateDoc(doc(db, 'slots', editingSlot.id), data);
       } else {
         await addDoc(collection(db, 'slots'), {
-          ...form,
+          ...data,
           currentBookings: 0,
           createdAt: serverTimestamp(),
         });
@@ -218,11 +264,6 @@ export default function AdminCoursesPage({ navigate }: Props) {
                   {Object.entries(COURSES_INFO).map(([key, info]) => (
                     <option key={key} value={key} className="bg-[#2C2C2C]">{info.label}</option>
                   ))}
-                  <option value="walking" className="bg-[#2C2C2C]">Walking</option>
-                  <option value="mobility" className="bg-[#2C2C2C]">Mobility + Addome</option>
-                  <option value="aereo" className="bg-[#2C2C2C]">Aereo Workout</option>
-                  <option value="postural" className="bg-[#2C2C2C]">Postural Pilates</option>
-                  <option value="autodifesa" className="bg-[#2C2C2C]">Autodifesa</option>
                 </select>
               </div>
 
@@ -264,12 +305,67 @@ export default function AdminCoursesPage({ navigate }: Props) {
                 </select>
               </div>
 
-              {/* Istruttore */}
+              {/* Istruttore — dropdown con ricerca */}
               <div>
                 <label className="text-white/50 text-xs mb-1 block">Istruttore</label>
-                <input type="text" placeholder="Nome istruttore" value={form.trainerName}
-                  onChange={e => setForm(f => ({ ...f, trainerName: e.target.value }))}
-                  className="w-full bg-white/10 text-white placeholder-white/30 border border-white/20 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#C0392B]" />
+                <div className="relative">
+                  <div className="flex items-center gap-2 bg-white/10 border border-white/20 rounded-xl px-4 py-3 focus-within:border-[#C0392B]">
+                    <Search className="w-4 h-4 text-white/30 flex-shrink-0" />
+                    <input
+                      type="text"
+                      placeholder="Cerca istruttore per nome o email..."
+                      value={trainerSearch}
+                      onChange={e => { setTrainerSearch(e.target.value); setShowTrainerDropdown(true); }}
+                      onFocus={() => setShowTrainerDropdown(true)}
+                      className="flex-1 bg-transparent text-white placeholder-white/30 text-sm focus:outline-none"
+                    />
+                    {form.trainerName && (
+                      <button onClick={clearTrainer} className="text-white/30 hover:text-white">
+                        <X className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Dropdown risultati */}
+                  {showTrainerDropdown && (
+                    <div className="absolute top-full left-0 right-0 mt-1 bg-[#2C2C2C] border border-white/20 rounded-xl overflow-hidden z-10 max-h-48 overflow-y-auto">
+                      {trainers.length === 0 ? (
+                        <div className="px-4 py-3 text-white/30 text-sm">
+                          Nessun trainer disponibile. Assegna il ruolo "Trainer" a un socio dalla Gestione Soci.
+                        </div>
+                      ) : filteredTrainers.length === 0 ? (
+                        <div className="px-4 py-3 text-white/30 text-sm">Nessun risultato</div>
+                      ) : (
+                        <>
+                          <button
+                            onClick={() => { clearTrainer(); setShowTrainerDropdown(false); }}
+                            className="w-full px-4 py-2.5 text-left text-white/40 text-sm hover:bg-white/5 border-b border-white/5">
+                            — Nessun istruttore
+                          </button>
+                          {filteredTrainers.map(t => (
+                            <button key={t.uid} onClick={() => selectTrainer(t)}
+                              className={`w-full px-4 py-2.5 text-left hover:bg-white/5 flex items-center gap-3 ${form.trainerId === t.uid ? 'bg-[#C0392B]/10' : ''}`}>
+                              <div className="w-8 h-8 rounded-full bg-[#4A4A4A] flex-shrink-0 flex items-center justify-center overflow-hidden">
+                                {t.avatarUrl
+                                  ? <img src={t.avatarUrl} className="w-full h-full object-cover" />
+                                  : <span className="text-white text-xs font-bold">{t.displayName.charAt(0)}</span>
+                                }
+                              </div>
+                              <div className="min-w-0">
+                                <p className="text-white text-sm font-medium truncate">{t.displayName}</p>
+                                <p className="text-white/30 text-xs truncate">{t.email}</p>
+                              </div>
+                              {form.trainerId === t.uid && <Check className="w-4 h-4 text-[#C0392B] ml-auto flex-shrink-0" />}
+                            </button>
+                          ))}
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
+                {form.trainerName && (
+                  <p className="text-white/40 text-xs mt-1">✅ Selezionato: {form.trainerName}</p>
+                )}
               </div>
 
               {/* Posti */}

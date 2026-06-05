@@ -26,8 +26,17 @@ interface Slot {
   endTime: string;
   room: string;
   trainerName: string;
+  trainerId?: string;
   maxCapacity: number;
   currentBookings: number;
+}
+
+interface TrainerProfile {
+  uid: string;
+  displayName: string;
+  avatarUrl?: string;
+  bio?: string;
+  specialties?: string[];
 }
 
 interface GymSettings {
@@ -85,6 +94,8 @@ export default function CoursesPage({ navigate }: Props) {
 
   // Dettaglio corso
   const [detailSlot, setDetailSlot] = useState<Slot | null>(null);
+  const [trainerProfile, setTrainerProfile] = useState<TrainerProfile | null>(null);
+  const [showTrainerProfile, setShowTrainerProfile] = useState(false);
 
   useEffect(() => { loadSlots(); }, [selectedDate]);
   useEffect(() => { if (user) loadMyStatus(); }, [user, selectedDate]);
@@ -142,6 +153,17 @@ export default function CoursesPage({ navigate }: Props) {
     const wMap: Record<string, string> = {};
     wSnap.docs.forEach(d => { wMap[d.data().slotId] = d.id; });
     setMyWaitlist(wMap);
+  }
+
+  async function loadTrainerProfile(trainerId: string) {
+    try {
+      const snap = await getDoc(doc(db, 'users', trainerId));
+      if (snap.exists()) {
+        const data = snap.data();
+        setTrainerProfile({ uid: snap.id, displayName: data.displayName, avatarUrl: data.avatarUrl, bio: data.bio, specialties: data.specialties });
+        setShowTrainerProfile(true);
+      }
+    } catch (e) { console.error(e); }
   }
 
   async function handleBook(slot: Slot) {
@@ -515,10 +537,20 @@ export default function CoursesPage({ navigate }: Props) {
                     </p>
                   </div>
                   {detailSlot.trainerName && (
-                    <div className="bg-white/5 rounded-xl p-3 col-span-2">
-                      <p className="text-white/40 text-xs mb-1">Istruttore</p>
-                      <p className="text-white font-bold">👤 {detailSlot.trainerName}</p>
-                    </div>
+                    <button
+                      onClick={() => detailSlot.trainerId ? loadTrainerProfile(detailSlot.trainerId) : null}
+                      className={`bg-white/5 rounded-xl p-3 col-span-2 text-left w-full ${detailSlot.trainerId ? 'hover:bg-white/10 transition-colors' : ''}`}>
+                      <p className="text-white/40 text-xs mb-2">Istruttore</p>
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full bg-[#4A4A4A] flex items-center justify-center flex-shrink-0 overflow-hidden">
+                          <span className="text-white font-bold text-sm">{detailSlot.trainerName.charAt(0).toUpperCase()}</span>
+                        </div>
+                        <div>
+                          <p className="text-white font-bold">{detailSlot.trainerName}</p>
+                          {detailSlot.trainerId && <p className="text-white/30 text-xs">Tocca per vedere il profilo →</p>}
+                        </div>
+                      </div>
+                    </button>
                   )}
                 </div>
 
@@ -547,6 +579,61 @@ export default function CoursesPage({ navigate }: Props) {
           </div>
         );
       })()}
+
+      {/* Modal profilo istruttore */}
+      {showTrainerProfile && trainerProfile && (
+        <div className="fixed inset-0 bg-black/80 z-[60] flex items-end">
+          <div className="bg-[#1e1e1e] w-full rounded-t-2xl p-5 max-h-[70vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-5">
+              <h2 className="text-white font-bold text-lg">Profilo Istruttore</h2>
+              <button onClick={() => setShowTrainerProfile(false)} className="text-white/40 hover:text-white">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="flex items-center gap-4 mb-5">
+              <div className="w-16 h-16 rounded-full bg-[#4A4A4A] flex-shrink-0 flex items-center justify-center overflow-hidden">
+                {trainerProfile.avatarUrl
+                  ? <img src={trainerProfile.avatarUrl} className="w-full h-full object-cover" />
+                  : <span className="text-white font-black text-2xl">{trainerProfile.displayName.charAt(0).toUpperCase()}</span>
+                }
+              </div>
+              <div>
+                <p className="text-white font-black text-xl">{trainerProfile.displayName}</p>
+                <p className="text-[#C0392B] text-sm font-medium">💪 Istruttore</p>
+              </div>
+            </div>
+
+            {trainerProfile.bio && (
+              <div className="mb-4">
+                <p className="text-white/40 text-xs uppercase tracking-widest mb-2">Bio</p>
+                <p className="text-white/70 text-sm leading-relaxed">{trainerProfile.bio}</p>
+              </div>
+            )}
+
+            {trainerProfile.specialties && trainerProfile.specialties.length > 0 && (
+              <div>
+                <p className="text-white/40 text-xs uppercase tracking-widest mb-2">Specialità</p>
+                <div className="flex flex-wrap gap-2">
+                  {trainerProfile.specialties.map(key => {
+                    const info = COURSES_INFO[key];
+                    if (!info) return null;
+                    return (
+                      <span key={key} className="px-3 py-1.5 bg-[#C0392B]/10 border border-[#C0392B]/20 text-[#C0392B] text-xs font-bold rounded-xl">
+                        {info.emoji} {info.label}
+                      </span>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {!trainerProfile.bio && (!trainerProfile.specialties || trainerProfile.specialties.length === 0) && (
+              <p className="text-white/30 text-sm text-center py-4">Nessuna informazione disponibile</p>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

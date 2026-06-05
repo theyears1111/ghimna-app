@@ -48,6 +48,8 @@ export interface GhimnaUser {
   avatarUrl?: string;
   role: UserRole;
   phone?: string;
+  bio?: string;           // aggiunto per profilo istruttore
+  specialties?: string[]; // aggiunto per profilo istruttore
   membershipStatus: MembershipStatus;
   membershipExpiry?: Date | null;
   fcmToken?: string;
@@ -61,9 +63,9 @@ export interface GhimnaUser {
 // ---- Corso -------------------------------------------------
 export interface CourseSchedule {
   id: string;
-  dayOfWeek: number;     // 0=Dom, 1=Lun, ..., 6=Sab
-  startTime: string;     // "09:00"
-  endTime: string;       // "10:00"
+  dayOfWeek: number;
+  startTime: string;
+  endTime: string;
   currentBookings: number;
   maxCapacity: number;
 }
