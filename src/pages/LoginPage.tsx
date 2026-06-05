@@ -1,104 +1,82 @@
 // ============================================================
-// GHIMNA TROTTA 2.0 — pages/LoginPage.tsx
+// GHIMNA TROTTA 2.0 — pages/LoginPage.tsx — REDESIGN
 // ============================================================
-
 import React, { useState } from 'react';
 import { useAuth } from '../AuthContext';
 import { RouteState } from '../types';
-import { BRAND, COLORS } from '../constants';
 
-interface Props {
-  navigate: (route: RouteState) => void;
-}
+interface Props { navigate: (r: RouteState) => void; }
 
 export default function LoginPage({ navigate }: Props) {
   const { loginEmail, loginGoogle } = useAuth();
-  const [email, setEmail]       = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError]       = useState('');
-  const [loading, setLoading]   = useState(false);
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
   async function handleEmailLogin(e: React.FormEvent) {
     e.preventDefault();
-    setError('');
-    setLoading(true);
-    try {
-      await loginEmail(email, password);
-      // AuthContext gestisce il redirect automaticamente
-    } catch (err: any) {
-      setError(getErrorMessage(err.code));
-    } finally {
-      setLoading(false);
-    }
+    setError(''); setLoading(true);
+    try { await loginEmail(email, password); }
+    catch (err: any) { setError(getErrorMessage(err.code)); }
+    finally { setLoading(false); }
   }
 
   async function handleGoogle() {
     setError('');
-    try {
-      await loginGoogle();
-    } catch (err: any) {
-      setError('Accesso con Google fallito. Riprova.');
-    }
+    try { await loginGoogle(); }
+    catch { setError('Accesso con Google fallito.'); }
   }
 
   return (
-    <div className="min-h-screen bg-[#2C2C2C] flex flex-col items-center justify-center px-4">
-      {/* Logo */}
-      <div className="mb-8 text-center">
-        <div className="text-4xl font-black tracking-tight text-white">
-          G<span className="text-[#C0392B]">T</span>
+    <div className="min-h-screen bg-[#1a1a1a] flex flex-col">
+      {/* Foto hero */}
+      <div className="relative h-72 flex-shrink-0 overflow-hidden">
+        <img src="/gym-corsi.jpg" alt="Ghimna Trotta" className="w-full h-full object-cover object-center" />
+        <div className="absolute inset-0 bg-gradient-to-b from-black/30 via-black/20 to-[#1a1a1a]" />
+
+        {/* Logo centrato */}
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-3">
+          <img src="/logo-gt.jpg" alt="GT" className="w-20 h-20 rounded-full border-2 border-white/20 shadow-2xl" />
+          <div className="text-center">
+            <p className="text-white font-black text-2xl tracking-widest">GHIMNA TROTTA</p>
+            <p className="text-[#C0392B] font-black text-lg tracking-widest">2.0</p>
+          </div>
         </div>
-        <p className="text-white/50 text-xs tracking-widest uppercase mt-1">
-          {BRAND.shortName}
-        </p>
       </div>
 
-      {/* Card */}
-      <div className="w-full max-w-sm bg-white/5 border border-white/10 rounded-2xl p-6 space-y-4">
-        <h1 className="text-white text-xl font-bold">Accedi</h1>
+      {/* Form */}
+      <div className="flex-1 px-5 pt-2 pb-8">
+        <h2 className="text-white font-black text-xl tracking-tight mb-1">ACCEDI</h2>
+        <p className="text-white/40 text-sm mb-6">Bentornato nella tua palestra</p>
 
         {error && (
-          <div className="bg-red-500/20 border border-red-500/40 text-red-300 text-sm px-4 py-2 rounded-lg">
+          <div className="bg-red-500/15 border border-red-500/30 text-red-300 text-sm px-4 py-3 rounded-xl mb-4">
             {error}
           </div>
         )}
 
         <form onSubmit={handleEmailLogin} className="space-y-3">
-          <input
-            type="email"
-            placeholder="Email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-            className="w-full bg-white/10 text-white placeholder-white/40 border border-white/20 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#C0392B]"
-          />
-          <input
-            type="password"
-            placeholder="Password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-            className="w-full bg-white/10 text-white placeholder-white/40 border border-white/20 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#C0392B]"
-          />
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full bg-[#C0392B] hover:bg-[#96281B] text-white font-bold py-3 rounded-xl transition-colors disabled:opacity-50"
-          >
-            {loading ? 'Accesso...' : 'Accedi'}
+          <input type="email" placeholder="Email" value={email}
+            onChange={e => setEmail(e.target.value)} required
+            className="w-full bg-white/15 text-white placeholder-white/60 border border-white/25 rounded-xl px-4 py-3.5 text-sm focus:outline-none focus:border-[#C0392B] transition-colors" />
+          <input type="password" placeholder="Password" value={password}
+            onChange={e => setPassword(e.target.value)} required
+            className="w-full bg-white/15 text-white placeholder-white/60 border border-white/25 rounded-xl px-4 py-3.5 text-sm focus:outline-none focus:border-[#C0392B] transition-colors" />
+          <button type="submit" disabled={loading}
+            className="w-full bg-[#C0392B] hover:bg-[#96281B] text-white font-black py-4 rounded-xl transition-colors disabled:opacity-50 tracking-widest text-sm">
+            {loading ? 'ACCESSO...' : 'ACCEDI'}
           </button>
         </form>
 
-        <div className="relative flex items-center gap-3">
+        <div className="flex items-center gap-3 my-5">
           <div className="flex-1 h-px bg-white/10" />
-          <span className="text-white/30 text-xs">oppure</span>
+          <span className="text-white/20 text-xs">oppure</span>
           <div className="flex-1 h-px bg-white/10" />
         </div>
 
-        <button
-          onClick={handleGoogle}
-          className="w-full bg-white hover:bg-gray-100 text-gray-800 font-semibold py-3 rounded-xl transition-colors flex items-center justify-center gap-2 text-sm"
-        >
+        <button onClick={handleGoogle}
+          className="w-full bg-white hover:bg-gray-100 text-gray-800 font-bold py-3.5 rounded-xl transition-colors flex items-center justify-center gap-2 text-sm">
           <svg className="w-5 h-5" viewBox="0 0 24 24">
             <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
             <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
@@ -108,14 +86,16 @@ export default function LoginPage({ navigate }: Props) {
           Continua con Google
         </button>
 
-        <p className="text-center text-white/40 text-sm">
-          Non hai un account?{' '}
-          <button
-            onClick={() => navigate({ page: 'REGISTER' })}
-            className="text-[#C0392B] hover:underline font-semibold"
-          >
+        <p className="text-center text-white/30 text-sm mt-6">
+          Prima volta?{' '}
+          <button onClick={() => navigate({ page: 'REGISTER' })}
+            className="text-[#C0392B] font-bold hover:underline">
             Registrati
           </button>
+        </p>
+
+        <p className="text-center text-white/15 text-xs mt-8 tracking-widest">
+          VIA NAZIONALE 20 — EBOLI (SA)
         </p>
       </div>
     </div>
@@ -125,13 +105,9 @@ export default function LoginPage({ navigate }: Props) {
 function getErrorMessage(code: string): string {
   switch (code) {
     case 'auth/user-not-found':
-    case 'auth/wrong-password':
-      return 'Email o password non corretti.';
-    case 'auth/too-many-requests':
-      return 'Troppi tentativi. Riprova tra qualche minuto.';
-    case 'auth/invalid-email':
-      return 'Email non valida.';
-    default:
-      return 'Errore di accesso. Riprova.';
+    case 'auth/wrong-password': return 'Email o password non corretti.';
+    case 'auth/too-many-requests': return 'Troppi tentativi. Riprova tra qualche minuto.';
+    case 'auth/invalid-email': return 'Email non valida.';
+    default: return 'Errore di accesso. Riprova.';
   }
 }

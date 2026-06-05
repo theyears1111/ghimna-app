@@ -1,9 +1,9 @@
 // ============================================================
 // GHIMNA TROTTA 2.0 — App.tsx
-// Router custom (NO react-router) — pattern Soundeckd
+// Router custom con History API per tasto indietro Android
 // ============================================================
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { AuthProvider, useAuth } from './AuthContext';
 import { RouteState, PageType } from './types';
 
@@ -29,7 +29,33 @@ function AppRouter() {
   const { user, loading, emailVerified } = useAuth();
   const [route, setRoute] = useState<RouteState>({ page: 'DASHBOARD' });
 
-  const navigate = (state: RouteState) => setRoute(state);
+  // Naviga pushando nella history del browser
+  const navigate = useCallback((state: RouteState) => {
+    // Non pushare DASHBOARD nella history (è la root)
+    if (state.page !== 'DASHBOARD') {
+      window.history.pushState(state, '', `#${state.page.toLowerCase()}`);
+    } else {
+      window.history.pushState(state, '', window.location.pathname);
+    }
+    setRoute(state);
+  }, []);
+
+  // Intercetta il tasto indietro del browser/Android
+  useEffect(() => {
+    // Stato iniziale nella history
+    window.history.replaceState({ page: 'DASHBOARD' }, '', window.location.pathname);
+
+    function handlePopState(event: PopStateEvent) {
+      if (event.state && event.state.page) {
+        setRoute(event.state as RouteState);
+      } else {
+        setRoute({ page: 'DASHBOARD' });
+      }
+    }
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
 
   if (loading) return <LoadingScreen />;
 
@@ -72,8 +98,8 @@ function AppRouter() {
       if (user.role !== 'admin') return <DashboardPage navigate={navigate} />;
       return <AdminAvvisiPage navigate={navigate} />;
     case 'ADMIN_STATISTICHE':
-  if (user.role !== 'admin') return <DashboardPage navigate={navigate} />;
-  return <AdminStatistichePage navigate={navigate} />;
+      if (user.role !== 'admin') return <DashboardPage navigate={navigate} />;
+      return <AdminStatistichePage navigate={navigate} />;
     case 'ADMIN_IMPOSTAZIONI':
       if (user.role !== 'admin') return <DashboardPage navigate={navigate} />;
       return <AdminImpostazioniPage navigate={navigate} />;
