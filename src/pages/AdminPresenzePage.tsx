@@ -6,12 +6,12 @@ import React, { useEffect, useState } from 'react';
 import {
   collection, query, where, getDocs,
   addDoc, deleteDoc, doc, updateDoc,
-  increment, serverTimestamp
+  increment, serverTimestamp, getDoc
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import { RouteState } from '../types';
 import { DAYS_IT, COURSES_INFO } from '../constants';
-import { ArrowLeft, ChevronLeft, ChevronRight, Users, ChevronDown, Plus, X, Search } from 'lucide-react';
+import { ArrowLeft, ChevronLeft, ChevronRight, Users, ChevronDown, Plus, X, Search, Phone, Mail } from 'lucide-react';
 
 interface Props { navigate: (r: RouteState) => void; }
 
@@ -61,6 +61,8 @@ export default function AdminPresenzePage({ navigate }: Props) {
   const [expandedSlot, setExpandedSlot] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
+  const [selectedMember, setSelectedMember] = useState<(Member & { bio?: string }) | null>(null);
+
   // Per aggiunta manuale
   const [addingToSlot, setAddingToSlot] = useState<string | null>(null);
   const [members, setMembers] = useState<Member[]>([]);
@@ -78,6 +80,22 @@ export default function AdminPresenzePage({ navigate }: Props) {
     const d = new Date(selectedDate);
     d.setDate(d.getDate() + 1);
     setSelectedDate(d);
+  }
+
+  async function loadMemberDetail(userId: string) {
+    try {
+      const snap = await getDoc(doc(db, 'users', userId));
+      if (snap.exists()) {
+        const d = snap.data();
+        setSelectedMember({
+          uid: snap.id,
+          displayName: d.displayName,
+          email: d.email,
+          phone: d.phone,
+          bio: d.bio,
+        });
+      }
+    } catch (e) { console.error(e); }
   }
 
   async function loadDayData() {
@@ -289,7 +307,11 @@ export default function AdminPresenzePage({ navigate }: Props) {
                           .map((booking, i) => (
                           <div key={booking.id} className="flex items-center gap-3 bg-white/5 rounded-xl px-3 py-2">
                             <span className="text-white/30 text-xs w-5">{i + 1}</span>
-                            <p className="text-white text-sm font-medium flex-1">{booking.userName}</p>
+                            <button
+                              onClick={() => loadMemberDetail(booking.userId)}
+                              className="text-white text-sm font-medium flex-1 text-left hover:text-[#C0392B] transition-colors">
+                              {booking.userName}
+                            </button>
                             <button
                               onClick={() => handleRemoveBooking(booking, slot.id)}
                               className="w-6 h-6 bg-red-500/10 hover:bg-red-500/20 rounded-lg flex items-center justify-center text-red-400 transition-colors">
@@ -358,6 +380,64 @@ export default function AdminPresenzePage({ navigate }: Props) {
           })
         )}
       </div>
+    {/* Modal profilo socio */}
+      {selectedMember && (
+        <div className="fixed inset-0 bg-black/80 z-50 flex items-end">
+          <div className="bg-[#1e1e1e] w-full rounded-t-2xl p-5">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-white font-bold text-lg">Profilo Socio</h2>
+              <button onClick={() => setSelectedMember(null)} className="text-white/40 hover:text-white">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="flex items-center gap-4 mb-5">
+              <div className="w-14 h-14 rounded-full bg-[#C0392B]/20 flex items-center justify-center flex-shrink-0">
+                <span className="text-[#C0392B] font-black text-2xl">{selectedMember.displayName.charAt(0).toUpperCase()}</span>
+              </div>
+              <div>
+                <p className="text-white font-black text-lg">{selectedMember.displayName}</p>
+                {selectedMember.bio && <p className="text-white/40 text-xs mt-0.5">{selectedMember.bio}</p>}
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              {selectedMember.phone ? (
+                <a href={`tel:${selectedMember.phone}`}
+                  className="flex items-center gap-3 bg-white/5 border border-white/10 rounded-xl px-4 py-3 hover:bg-white/10 transition-colors">
+                  <div className="w-8 h-8 bg-green-500/20 rounded-lg flex items-center justify-center">
+                    <Phone className="w-4 h-4 text-green-400" />
+                  </div>
+                  <div>
+                    <p className="text-white/40 text-xs">Telefono</p>
+                    <p className="text-white font-bold">{selectedMember.phone}</p>
+                  </div>
+                  <span className="ml-auto text-green-400 text-xs font-bold">Chiama →</span>
+                </a>
+              ) : (
+                <div className="flex items-center gap-3 bg-white/5 border border-white/10 rounded-xl px-4 py-3 opacity-40">
+                  <div className="w-8 h-8 bg-white/10 rounded-lg flex items-center justify-center">
+                    <Phone className="w-4 h-4 text-white/40" />
+                  </div>
+                  <p className="text-white/40 text-sm">Nessun numero inserito</p>
+                </div>
+              )}
+
+              <a href={`mailto:${selectedMember.email}`}
+                className="flex items-center gap-3 bg-white/5 border border-white/10 rounded-xl px-4 py-3 hover:bg-white/10 transition-colors">
+                <div className="w-8 h-8 bg-blue-500/20 rounded-lg flex items-center justify-center">
+                  <Mail className="w-4 h-4 text-blue-400" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-white/40 text-xs">Email</p>
+                  <p className="text-white font-bold text-sm truncate">{selectedMember.email}</p>
+                </div>
+                <span className="ml-auto text-blue-400 text-xs font-bold flex-shrink-0">Scrivi →</span>
+              </a>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
